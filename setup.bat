@@ -49,18 +49,22 @@ REM Step 4: Download GGUF model (~1 GB)
 echo.
 echo [5/6] Checking for local model...
 
-if exist "models\chakra_local\Qwen2.5-Coder-1.5B-Instruct-Q4_K_M.gguf" (
-    echo        GGUF model already present. Skipping download.
-) else if exist "models\chakra_local\*.gguf" (
-    echo        GGUF model found. Skipping download.
-) else (
-    echo        Downloading Qwen2.5-Coder-1.5B (Q4_K_M, ~1 GB)...
-    python chakra/engine_llama.py --download
-    if errorlevel 1 (
-        echo [WARN]  GGUF download failed. Falling back to PyTorch safetensors download.
-        python tools/download_model.py
-    )
+if exist "models\chakra_local\Qwen2.5-Coder-1.5B-Instruct-Q4_K_M.gguf" goto :model_found
+dir models\chakra_local\*.gguf 1>nul 2>nul
+if not errorlevel 1 goto :model_found
+
+echo        Downloading Qwen2.5-Coder-1.5B (Q4_K_M, ~1 GB)...
+python chakra/engine_llama.py --download
+if errorlevel 1 (
+    echo [WARN] GGUF download failed. Falling back to PyTorch safetensors download.
+    python tools/download_model.py
 )
+goto :step6
+
+:model_found
+echo        GGUF model already present. Skipping download.
+
+:step6
 
 REM Step 5: Run benchmark
 echo.
