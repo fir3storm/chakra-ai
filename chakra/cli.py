@@ -16,6 +16,7 @@ from chakra.model import K3Config, K3Model, tiny_config
 from chakra.session import SessionManager
 from chakra.persona import PersonaManager
 from chakra.tokenizer import KimiTokenizer
+from chakra.updater import check_and_notify
 from chakra.ui import (
     Spinner,
     clear_screen,
@@ -1003,6 +1004,7 @@ def main(args: Optional[List[str]] = None) -> int:
     cache_gb = parsed.cache_gb if parsed.cache_gb is not None else preset_info["cache_gb"]
 
     print_banner()
+    check_and_notify()  # Check for updates (cached, non-blocking)
     print_step("CONFIG", f"Preset: {parsed.preset} ({preset_info['description']})", "INFO")
     print_step("CONFIG", f"Expert Cache: {cache_gb:.2f} GB | Incremental: {parsed.incremental} | Device: {parsed.device}", "INFO")
 
