@@ -36,20 +36,51 @@ class LocalModelRunner:
     def _load_model(self) -> None:
         if self.model_path.exists():
             try:
+                import os
+                import torch
                 from transformers import AutoModelForCausalLM, AutoTokenizer
+
+                # Multi-threading: use all CPU cores for matmul operations
+                num_threads = os.cpu_count() or 4
+                torch.set_num_threads(num_threads)
+                torch.set_num_interop_threads(2)
+                
+                # Fused optimizations
+                torch.set_float32_matmul_precision('high')
+
                 self.tokenizer = AutoTokenizer.from_pretrained(
                     str(self.model_path), trust_remote_code=True
                 )
                 self.model = AutoModelForCausalLM.from_pretrained(
-                    str(self.model_path), trust_remote_code=True
+                    str(self.model_path),
+                    trust_remote_code=True,
+                    torch_dtype=torch.float16,          # Half precision — cuts RAM from 6GB to 3GB
+                    low_cpu_mem_usage=True,              # Don't load full model then discard
                 ).to(self.device)
                 self.model.eval()
                 self.loaded = True
+                print(f"[INFO] Model loaded with {num_threads} threads, float16 precision")
             except Exception as e:
-                self.loaded = False
-                self.model = None
-                self.tokenizer = None
-                print(f"[WARN] LocalModelRunner failed to load model: {e}")
+                # Fallback: try loading as float32 if float16 fails
+                try:
+                    from transformers import AutoModelForCausalLM, AutoTokenizer
+                    self.tokenizer = AutoTokenizer.from_pretrained(
+                        str(self.model_path), trust_remote_code=True
+                    )
+                    self.model = AutoModelForCausalLM.from_pretrained(
+                        str(self.model_path),
+                        trust_remote_code=True,
+                        torch_dtype=torch.float32,
+                        low_cpu_mem_usage=True,
+                    ).to(self.device)
+                    self.model.eval()
+                    self.loaded = True
+                    print("[WARN] Float16 failed, loaded as float32")
+                except Exception as e2:
+                    self.loaded = False
+                    self.model = None
+                    self.tokenizer = None
+                    print(f"[WARN] LocalModelRunner failed to load model: {e2}")
 
     def generate(
         self,
@@ -70,7 +101,7 @@ class LocalModelRunner:
                     text = prompt_or_tensor
 
                 inputs = self.tokenizer(text, return_tensors="pt", return_attention_mask=True).to(self.device)
-                with torch.no_grad():
+                with torch.inference_mode():
                     outputs = self.model.generate(
                         **inputs,
                         max_new_tokens=n_new,
@@ -83,7 +114,7 @@ class LocalModelRunner:
                 new_tokens = outputs[0][inputs["input_ids"].shape[1]:]
                 return self.tokenizer.decode(new_tokens, skip_special_tokens=True)
             elif isinstance(prompt_or_tensor, torch.Tensor):
-                with torch.no_grad():
+                with torch.inference_mode():
                     outputs = self.model.generate(prompt_or_tensor, max_new_tokens=n_new)
                 return outputs
         if isinstance(prompt_or_tensor, str):

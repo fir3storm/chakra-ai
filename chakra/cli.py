@@ -13,6 +13,7 @@ from typing import Any, Dict, List, Optional, Union
 import torch
 
 from chakra.agent import KimiAgent, LocalModelRunner
+from chakra.engine_llama import LlamaCppBackend
 from chakra.multi_agent import MultiAgentOrchestrator
 from chakra.model import K3Config, K3Model, tiny_config
 from chakra.session import SessionManager
@@ -829,7 +830,6 @@ def main(args: Optional[List[str]] = None) -> int:
     elif use_option_b:
         # Option B: Lightweight local trained model (default)
         local_path = Path(parsed.local_model) if parsed.local_model else LOCAL_MODEL_DIR
-        print_step("ENGINE", "Option B: Lightweight Local Trained Model (~2.5 GB RAM)", "INFO")
 
         # Auto-download if model not present
         if not local_path.exists() or not any(local_path.glob("*")):
@@ -837,15 +837,31 @@ def main(args: Optional[List[str]] = None) -> int:
             ensure_local_model()
 
         if local_path.exists():
-            print_step("MODEL", f"Loading local model from: {local_path}", "WAIT")
-            runner = LocalModelRunner(model_path=str(local_path), device=parsed.device)
-            if runner.loaded:
-                model = runner
-                print_step("MODEL", f"Local model loaded: {runner.model_name}", "SUCCESS")
-            else:
-                print_step("MODEL", "Local model load failed. Falling back to echo mode.", "WARN")
+            # Try llama.cpp GGUF first (10-20x faster)
+            gguf_files = list(local_path.glob("*.gguf"))
+            if gguf_files:
+                print_step("ENGINE", "llama.cpp GGUF backend (fastest)", "INFO")
+                backend = LlamaCppBackend(model_path=str(gguf_files[0]))
+                if backend.loaded:
+                    model = backend
+                    print_step("MODEL", f"llama.cpp loaded: {backend.model_name}", "SUCCESS")
+                else:
+                    print_step("MODEL", "llama.cpp load failed. Falling back to PyTorch.", "WARN")
+
+            # Fall back to PyTorch
+            if model is None:
+                print_step("ENGINE", "PyTorch float16 backend (balanced)", "INFO")
+                runner = LocalModelRunner(model_path=str(local_path), device=parsed.device)
+                if runner.loaded:
+                    model = runner
+                    print_step("MODEL", f"PyTorch loaded: {runner.model_name}", "SUCCESS")
+                else:
+                    print_step("MODEL", "PyTorch load failed. Using echo fallback.", "WARN")
         else:
             print_step("MODEL", "No local model available. Using echo fallback mode.", "WARN")
+
+        if model is None:
+            print_step("MODEL", "To install fastest backend: pip install llama-cpp-python && python chakra/engine_llama.py --download", "INFO")
 
     elif parsed.tiny:
         # Tiny synthetic mode for verification
