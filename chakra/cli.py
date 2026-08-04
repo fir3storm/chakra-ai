@@ -349,6 +349,23 @@ def run_repl(
     print_step("PERSONA", f"Active Persona: [{active_persona.upper()}] - {persona_mgr.get_active_persona()['name']}", "INFO")
     print_step("SESSION", f"Active Session ID: {active_session_id}", "INFO")
 
+    # System context for accurate responses
+    import datetime
+    now = datetime.datetime.now()
+    system_info = f"{now.strftime('%A, %B %d, %Y %H:%M')} | {sys.platform}"
+    print_step("SYSTEM", system_info, "INFO")
+
+    # Load project memory from .chakra_memory
+    memory_file = Path(".chakra_memory")
+    project_memory = ""
+    if memory_file.exists():
+        try:
+            project_memory = memory_file.read_text(encoding="utf-8").strip()
+            if project_memory:
+                print_step("MEMORY", f"Loaded {len(project_memory.splitlines())} lines of project context", "INFO")
+        except Exception:
+            pass
+
     # Workspace summary for conversation memory
     try:
         py_files = sorted(Path.cwd().glob("*.py"))
@@ -436,6 +453,10 @@ def run_repl(
             print("  /resume <id>       - Resume/load a saved session by ID")
             print("  /persona [role]    - Switch persona (infosec, architect, devops, fullstack)")
             print("  /team <prompt>     - Launch Multi-Agent team collaboration mode")
+            print("  /plan <task>       - Multi-step task planning & execution")
+            print("  /edit <file> <cmd> - Edit a file with AI assistance")
+            print("  /git [cmd]         - Run git commands (status, diff, commit)")
+            print("  /memory [text]     - View/save project context for future sessions")
             print("  /agents            - List active multi-agent team roles")
             print("  /save <filepath>   - Save last generated Python code block to a local file")
             print("  /clear             - Clear terminal screen")
@@ -631,7 +652,7 @@ def run_repl(
                 continue
             team_prompt = parts[1].strip()
             persona_prefix = persona_mgr.get_system_prompt()
-            full_prompt = f"{persona_prefix}\n{team_prompt}"
+            full_prompt = f"{date_context}\n{persona_prefix}\n{team_prompt}"
             print_step("TEAM", f"[{active_persona.upper()}] Launching Team Collaboration: '{team_prompt}'...", "WAIT")
 
             res = orchestrator.run_team_collaboration(
@@ -663,6 +684,109 @@ def run_repl(
             print()
             continue
 
+        # Determine intent: Code/Task Generation vs Conversational Chat
+
+        # ── /plan command: multi-step task planning ──
+        if user_input.startswith("/plan"):
+            parts = user_input.split(maxsplit=1)
+            if len(parts) < 2:
+                print_step("PLAN", "Usage: /plan <complex task description>", "WARN")
+                continue
+
+            plan_prompt = parts[1].strip()
+            print_header(f"PLAN: {plan_prompt}")
+            persona_prefix = persona_mgr.get_system_prompt()
+            date_context = f"Current date: {now.strftime('%A, %B %d, %Y %H:%M')}. OS: {sys.platform}."
+
+            # Step 1: Generate the plan
+            print_step("PLAN", "Step 1: Generating task breakdown...", "WAIT")
+            breakdown_prompt = f"{date_context}\n{persona_prefix}\nBreak down this complex request into numbered steps (max 5). Output ONLY the step list, one per line, starting with '1.', no extra text:\n{plan_prompt}"
+
+            try:
+                if isinstance(model, LlamaCppBackend) and model.loaded:
+                    plan_text = model.generate(breakdown_prompt, n_new=128)
+                elif isinstance(model, LocalModelRunner) and model.loaded:
+                    plan_text = model.generate(breakdown_prompt, n_new=128)
+                else:
+                    plan_text = agent.chat(breakdown_prompt, gen_tokens=128)
+            except Exception:
+                plan_text = "1. Implement the core logic\n2. Add error handling\n3. Write the main entry point"
+
+            # Parse steps
+            steps = []
+            for line in plan_text.splitlines():
+                line = line.strip()
+                if line and (line[0].isdigit() and '.' in line[:3]):
+                    step_text = line.split('.', 1)[1].strip()
+                    if step_text:
+                        steps.append(step_text)
+            if not steps:
+                steps = [plan_prompt]
+
+            print_step("PLAN", f"Found {len(steps)} step(s):", "INFO")
+            for i, s in enumerate(steps, 1):
+                print(f"  {i}. {s}")
+
+            # Step 2: Execute each step
+            results = []
+            for i, step_desc in enumerate(steps, 1):
+                print_header(f"Step {i}/{len(steps)}: {step_desc[:60]}")
+                with Spinner(f"Executing step {i}...") as sp:
+                    step_prompt = f"{date_context}\n{persona_prefix}\nWrite a complete Python script for this specific task only:\n{step_desc}\nEnclose in ```python ... ```"
+                    res = agent.run_agentic_loop(prompt=step_prompt, max_retries=1, gen_tokens=gen_tokens)
+                    results.append({"step": i, "task": step_desc, "code": res.get("code", ""), "success": res.get("success", False)})
+                    sp.set_result(f"{'OK' if res.get('success') else 'FAIL'}")
+                    print_tool("execute" if res.get("success") else "error", f"Step {i} complete")
+
+            # Step 3: Save .chakra_memory
+            mem_lines = [f"Task: {plan_prompt}"]
+            for r in results:
+                mem_lines.append(f"  Step {r['step']}: {r['task']} ({'OK' if r['success'] else 'FAIL'})")
+            Path(".chakra_memory").write_text("\n".join(mem_lines), encoding="utf-8")
+            project_memory = "\n".join(mem_lines)
+            print_tool("save", ".chakra_memory", f"→ {len(mem_lines)} lines")
+            print_step("PLAN", f"All {len(steps)} steps completed. Memory saved.", "SUCCESS")
+            continue
+
+        # ── /git command ──
+        if user_input.startswith("/git"):
+            parts = user_input.split(maxsplit=1)
+            git_cmd = parts[1].strip() if len(parts) > 1 else "status"
+            import subprocess as sp
+            try:
+                result = sp.run(["git"] + git_cmd.split(), capture_output=True, text=True, cwd=str(Path.cwd()), timeout=15)
+                if result.returncode == 0:
+                    print_step("GIT", f"git {git_cmd} — OK", "SUCCESS")
+                    if result.stdout.strip():
+                        print(result.stdout.strip())
+                else:
+                    print_step("GIT", f"git {git_cmd} failed", "FAIL")
+                    if result.stderr.strip():
+                        print(result.stderr.strip()[:500])
+            except FileNotFoundError:
+                print_step("GIT", "git not installed or not in PATH", "WARN")
+            except sp.TimeoutExpired:
+                print_step("GIT", "git command timed out", "WARN")
+            except Exception as e:
+                print_step("GIT", f"Error: {e}", "FAIL")
+            continue
+
+        # ── /memory command ──
+        if user_input.startswith("/memory"):
+            parts = user_input.split(maxsplit=1)
+            if len(parts) > 1 and parts[1].strip():
+                new_memory = parts[1].strip()
+                Path(".chakra_memory").write_text(new_memory, encoding="utf-8")
+                project_memory = new_memory
+                print_tool("save", ".chakra_memory", f"→ {len(new_memory.splitlines())} lines")
+            else:
+                if project_memory:
+                    print_step("MEMORY", f"\n{project_memory}", "INFO")
+                else:
+                    print_step("MEMORY", "No project memory set. Use /memory <text> to save context.", "INFO")
+            continue
+
+        # ── /edit command ──
         # Determine intent: Code/Task Generation vs Conversational Chat
         # Check for /edit command first
         if user_input.startswith("/edit"):
@@ -711,7 +835,10 @@ def run_repl(
         is_code_task = user_input.startswith("/code") or any(k in user_input.lower() for k in task_keywords)
 
         persona_prefix = persona_mgr.get_system_prompt()
-        full_prompt = f"{persona_prefix}\n{user_input}"
+        date_context = f"Current date: {now.strftime('%A, %B %d, %Y %H:%M')}. OS: {sys.platform}."
+        memory_context = f"\nProject knowledge: {project_memory}" if project_memory else ""
+        full_prompt = f"{date_context}\n{persona_prefix}{memory_context}\n{user_input}"
+        ws_context = ""  # filled below for code tasks
 
         if is_code_task:
             code_prompt = user_input[5:].strip() if user_input.startswith("/code") else user_input
@@ -732,7 +859,7 @@ def run_repl(
             if workspace_files:
                 ws_context = f"\nWorking directory: {Path.cwd()}\nExisting files: {', '.join(workspace_files)}\n"
 
-            full_prompt = f"{persona_prefix}\n{ws_context}{user_input}"
+            full_prompt = f"{date_context}\n{persona_prefix}{memory_context}\n{ws_context}{user_input}"
 
             with Spinner(f"Thinking about: {code_prompt[:50]}...") as sp:
                 res = agent.run_agentic_loop(
