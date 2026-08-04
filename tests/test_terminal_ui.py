@@ -80,7 +80,7 @@ class TestTerminalUI(unittest.TestCase):
             ui.print_banner()
 
         output = captured_output.getvalue()
-        self.assertIn("CHAKRA AI", output)
+        self.assertIn("C H A K R A", output)
         self.assertIn("github.com/fir3storm/chakra-ai", output)
 
 

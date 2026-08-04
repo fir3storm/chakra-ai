@@ -222,21 +222,18 @@ def print_header(text: str) -> None:
 
 
 def print_banner() -> None:
-    """Render ASCII banner with branding for Chakra AI."""
-    banner_art = r"""
-  ╔═══════════════════════════════════════════════════════════════════════════╗
-  ║   ____ _   _    _    _  ___  _       _    ___                             ║
-  ║  / ___| | | |  / \  | |/ / |  _ \   / \  |_ _|   CHAKRA AI               ║
-  ║ | |   | |_| | / _ \ | ' /| |_) | / _ \  | |    Agentic Code Terminal     ║
-  ║ | |___|  _  |/ ___ \| . \|  _ < / ___ \ | |    Multi-Engine MoE          ║
-  ║  \____|_| |_/_/   \_\_|\_\_|_| \_\_/   \_\___|                            ║
-  ║                                                                           ║
-  ║  Author: Abhirup Guha (Info Security Solution)                            ║
-  ║  github.com/fir3storm/chakra-ai                                           ║
-  ╚═══════════════════════════════════════════════════════════════════════════╝
-"""
+    """Render clean modern startup screen — no ASCII bricks."""
     c = Colors
-    _safe_print(f"{c.BRIGHT_CYAN}{c.BOLD}{banner_art}{c.RESET}")
+    logo = f"""
+{c.BRIGHT_CYAN}{c.BOLD}     ┌──────────────────────────────────────────────┐
+     │  ▐▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▌  │
+     │  ▐▓▌  {c.BRIGHT_WHITE}⚡  C H A K R A   A I{c.BRIGHT_CYAN}              ▐▓▌  │
+     │  ▐▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▌  │
+     └──────────────────────────────────────────────┘{c.RESET}
+    {c.BRIGHT_BLACK}  Agentic Code Terminal · Offline · No GPU · 8GB RAM
+    {c.BRIGHT_BLACK}  github.com/fir3storm/chakra-ai{c.RESET}
+    """
+    _safe_print(logo)
 
 
 def print_step(
