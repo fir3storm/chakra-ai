@@ -267,10 +267,12 @@ class TestExpertLRUCache(unittest.TestCase):
         self.assertTrue(cache.contains(0, 0))
 
         data1 = cache.get(0, 1, fetch_fn=mock_fetch)
+        self.assertEqual(data1, b"expert_0_1")
         self.assertEqual(len(cache), 2)
 
         # Trigger eviction of (0, 0) by fetching (0, 2)
         data2 = cache.get(0, 2, fetch_fn=mock_fetch)
+        self.assertEqual(data2, b"expert_0_2")
         self.assertEqual(len(cache), 2)
         self.assertFalse(cache.contains(0, 0))
         self.assertTrue(cache.contains(0, 1))

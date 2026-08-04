@@ -129,7 +129,6 @@ def matmul_mxfp4_fused(
         x = x.unsqueeze(0)
         squeeze = True
 
-    batch_shape = x.shape[:-1]
     in_features = x.shape[-1]
     out_features = packed.shape[0]
     n_groups = in_features // group

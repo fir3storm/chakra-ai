@@ -22,7 +22,7 @@ class TestKimipyUI(unittest.TestCase):
         with patch("sys.stdout", buf):
             print_banner()
         out = buf.getvalue()
-        self.assertIn("CHAKRA-AI TERMINAL", out)
+        self.assertIn("C H A K R A", out)
         self.assertIn("Abhirup Guha", out)
 
     def test_print_step(self):
@@ -69,8 +69,8 @@ class TestKimipyUI(unittest.TestCase):
             )
 
         out = buf.getvalue()
-        self.assertEqual(mock_input.call_args[0][0], "(chakra-ai) > ")
-        self.assertIn("Exiting Chakra-AI Agentic Terminal", out)
+        self.assertEqual(mock_input.call_args[0][0], "(fullstack) > ")
+        self.assertIn("Exiting Chakra-AI", out)
         mock_agent.run_agentic_loop.assert_called_once()
         call_kwargs = mock_agent.run_agentic_loop.call_args.kwargs
         self.assertIn("Write a print hello script", call_kwargs["prompt"])

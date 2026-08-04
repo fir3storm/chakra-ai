@@ -850,7 +850,7 @@ def run_repl(
             for f in Path.cwd().glob("*.py"):
                 if f.stat().st_size < 10000:
                     try:
-                        lines = f.read_text(encoding="utf-8").splitlines()[:10]
+                        f.read_text(encoding="utf-8")
                         workspace_files.append(f"{f.name}")
                     except Exception:
                         pass

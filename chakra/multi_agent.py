@@ -853,11 +853,9 @@ class MultiAgentOrchestrator:
         if output_dir is not None:
             workspace = Path(output_dir)
             workspace.mkdir(parents=True, exist_ok=True)
-            cleanup_workspace = False
         else:
             temp_dir_obj = tempfile.TemporaryDirectory()
             workspace = Path(temp_dir_obj.name)
-            cleanup_workspace = False  # Keep directory path in result
 
         modules_code: Dict[str, str] = {}
         audit_reports: Dict[str, Dict[str, Any]] = {}
@@ -868,7 +866,6 @@ class MultiAgentOrchestrator:
         # Step 2: Component Code Generation & Audit Iteration Loop
         for spec in modules_specs:
             filename = spec.get("filename", "module.py")
-            module_passed = False
             feedback: Optional[str] = None
             final_code = ""
             final_audit: Dict[str, Any] = {}
@@ -905,7 +902,6 @@ class MultiAgentOrchestrator:
                 )
 
                 if audit_res["passed"]:
-                    module_passed = True
                     break
 
                 # Formulate feedback for retry

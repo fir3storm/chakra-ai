@@ -158,7 +158,6 @@ class LocalModelRunner:
         if self.loaded and self.model is not None and self.tokenizer is not None:
             try:
                 from transformers import TextIteratorStreamer
-                import torch
                 from threading import Thread
 
                 inputs = self.tokenizer(prompt, return_tensors="pt").to(self.device)
