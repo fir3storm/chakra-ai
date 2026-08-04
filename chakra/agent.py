@@ -219,7 +219,7 @@ class KimiAgent:
 
     def extract_code_blocks(self, text: str) -> List[str]:
         """
-        Extracts all code blocks enclosed in ```python ... ``` or ``` ... ``` from text.
+        Extracts all code blocks enclosed in ```lang ... ``` or ``` ... ``` from text.
         Handles truncated responses (opening ``` but no closing ```).
 
         Args:
@@ -231,14 +231,14 @@ class KimiAgent:
         if not text:
             return []
 
-        # Try complete code blocks first
-        pattern = r"```(?:python)?\s*\n?(.*?)```"
+        # Try complete code blocks first (any language)
+        pattern = r"```(?:\w+)?\s*\n?(.*?)```"
         blocks = re.findall(pattern, text, re.DOTALL)
         if blocks:
             return [b.strip() for b in blocks if b.strip()]
 
         # Handle truncated response: opening ``` but no closing
-        trunc_pattern = r"```(?:python)?\s*\n?(.*)"
+        trunc_pattern = r"```(?:\w+)?\s*\n?(.*)"
         trunc_match = re.search(trunc_pattern, text, re.DOTALL)
         if trunc_match:
             code = trunc_match.group(1).strip()

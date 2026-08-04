@@ -895,8 +895,8 @@ def run_repl(
 
             # Clean prompt — detect and respect target language
             if target_lang != "Python":
-                code_fence = f"```{target_ext[1:]}" if target_ext[1:] != "py" else "```python"
-                clean_code_prompt = f"You are a {target_lang} expert. Write a complete, production-ready {target_lang} file.\n\nRequest: {code_prompt}\n\nWorkspace: {ws_context}\n\nPlease write the code in a {code_fence} code block."
+                code_fence = f"```{target_ext[1:]}"
+                clean_code_prompt = f"You are a {target_lang} expert. Write a complete, production-ready {target_lang} file.\n\nRequest: {code_prompt}\n\nWorkspace: {ws_context}\n\nIMPORTANT: Start your response with {code_fence} and end with ```. Only output code inside the code fence."
             else:
                 clean_code_prompt = f"Write a complete, runnable Python script for the following request:\n{ws_context}{code_prompt}\nEnclose python code in ```python ... ``` code block."
 
