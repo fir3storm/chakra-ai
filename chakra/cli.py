@@ -727,7 +727,7 @@ def run_repl(
 
 def main(args: Optional[List[str]] = None) -> int:
     parser = argparse.ArgumentParser(
-        description="chakra: Pure PyTorch runner and CLI for Kimi K3"
+        description="chakra: Chakra AI - Agentic Coding Terminal with Multi-Engine Kimi K3 Support"
     )
     parser.add_argument(
         "--preset",

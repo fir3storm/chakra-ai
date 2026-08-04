@@ -1,3 +1,28 @@
+Metadata-Version: 2.4
+Name: chakra-ai
+Version: 0.1.0
+Summary: Chakra AI - Agentic Coding Terminal with Multi-Engine Kimi K3 Support
+Home-page: https://github.com/fir3storm/chakra-ai
+Author: Abhirup Guha (Info Security Solution)
+Project-URL: Homepage, https://github.com/fir3storm/chakra-ai
+Project-URL: Repository, https://github.com/fir3storm/chakra-ai.git
+Classifier: Development Status :: 4 - Beta
+Classifier: Intended Audience :: Developers
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Operating System :: OS Independent
+Classifier: Programming Language :: Python :: 3.10
+Classifier: Programming Language :: Python :: 3.11
+Classifier: Programming Language :: Python :: 3.12
+Classifier: Topic :: Scientific/Engineering :: Artificial Intelligence
+Requires-Python: >=3.10
+Description-Content-Type: text/markdown
+License-File: LICENSE
+Requires-Dist: torch>=2.0.0
+Requires-Dist: numpy>=1.22.0
+Dynamic: home-page
+Dynamic: license-file
+Dynamic: requires-python
+
 # ⚡ Chakra AI
 
 <div align="center">

@@ -12,7 +12,7 @@
 - Prefers pytest for testing with comprehensive test coverage including mocks and edge cases. Confidence: 0.8
 - Project is "Chakra-AI" — an agentic coding platform built on a custom PyTorch Kimi K3 engine. Confidence: 0.9
 - Author attribution: "Abhirup Guha (Info Security Solution)". Confidence: 0.9
-- When issues are already identified, gives terse "fix the issues" instructions and expects the assistant to handle the full fix-and-verify cycle autonomously — no need to re-list problems or micromanage. Confidence: 0.75
+- Gives terse, action-oriented instructions (e.g. "fix the issues", "update the readme and push") and expects the assistant to handle the full workflow autonomously — content creation, verification, commit, and push — without asking for intermediate confirmation or re-listing details. Confidence: 0.85
 - Wants unified dual-purpose tools: explicitly wants a single system that combines agentic coding agent AND chat agent ("both in one"). Confidence: 0.9
 - Expects full autonomous multi-phase execution after plan approval — when a phased plan is approved, the assistant should complete all phases independently without asking for confirmation between steps. Confidence: 0.85
 - Values architectural consolidation and eliminating code debt — accepts and encourages replacing inline/duplicate code with proper module abstractions (sessions, personas, security auditing all consolidated in this session). Confidence: 0.85
@@ -36,3 +36,5 @@
 - Uses specific reference implementations as proof-of-concept for what's achievable on their hardware — points to third-party projects (e.g. "he did it, can you plan how to make mine faster?") as benchmarks for performance targets, not just competitive comparisons. Confidence: 0.8
 - Wants one-click installer scripts that fully prepare a machine from scratch — dependencies, package install, model download, benchmarking — in a single command, across platforms (Windows .bat + Linux .sh). Confidence: 0.85
 - Strongly prefers safe-by-default distribution: large downloads (multi-GB/TB) must require explicit opt-in flags and never be triggered automatically; installer scripts should default to the smallest viable model. Confidence: 0.9
+- Wants lean, clean repositories — actively purges legacy/unused files, old fixtures, orphaned test scripts, and tooling metadata when building on or repurposing existing codebases. Comfortable with the assistant making judgment calls on what to remove. Confidence: 0.85
+- Expects tooling metadata directories (e.g. .commandcode/) and session files to be gitignored and removed from version control tracking. Confidence: 0.85

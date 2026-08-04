@@ -1,0 +1,2 @@
+[console_scripts]
+chakra = chakra.cli:main
