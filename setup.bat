@@ -49,9 +49,10 @@ REM Step 4: Download GGUF model (~1 GB)
 echo.
 echo [5/6] Checking for local model...
 
-set GGUF_FILE=models\chakra_local\Qwen2.5-Coder-1.5B-Instruct-Q4_K_M.gguf
-if exist "%GGUF_FILE%" (
+if exist "models\chakra_local\Qwen2.5-Coder-1.5B-Instruct-Q4_K_M.gguf" (
     echo        GGUF model already present. Skipping download.
+) else if exist "models\chakra_local\*.gguf" (
+    echo        GGUF model found. Skipping download.
 ) else (
     echo        Downloading Qwen2.5-Coder-1.5B (Q4_K_M, ~1 GB)...
     python chakra/engine_llama.py --download

@@ -20,6 +20,7 @@ chakra/st_reader.py
 chakra/tokenizer.py
 chakra/trunk_streamer.py
 chakra/ui.py
+chakra/updater.py
 chakra/workspace.py
 chakra_ai.egg-info/PKG-INFO
 chakra_ai.egg-info/SOURCES.txt
