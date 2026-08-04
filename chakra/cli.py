@@ -348,10 +348,20 @@ def run_repl(
     print_step("REPL", "Chakra-AI Agentic Terminal Active", "SUCCESS")
     print_step("PERSONA", f"Active Persona: [{active_persona.upper()}] - {persona_mgr.get_active_persona()['name']}", "INFO")
     print_step("SESSION", f"Active Session ID: {active_session_id}", "INFO")
+
+    # Workspace summary for conversation memory
+    try:
+        py_files = sorted(Path.cwd().glob("*.py"))
+        if py_files:
+            file_list = ", ".join(f"{f.name} ({len(f.read_text(encoding='utf-8', errors='replace').splitlines())}L)" for f in py_files[:15])
+            print_step("WORKSPACE", f"{Path.cwd().name}: {file_list}", "INFO")
+    except Exception:
+        pass
+
     print_step("COMMANDS", "Type natural prompt or command to execute agent tasks.", "INFO")
     print_step(
         "SHORTCUTS",
-        "/context | /tree | /audit <file> | /scan-vuln | /run <file> | /diff | /sessions | /resume <id> | /persona [role] | /help\n",
+            "/context | /tree | /audit <file> | /scan-vuln | /run <file> | /edit <file> <instruction> | /diff | /sessions | /resume <id> | /persona [role] | /help\n",
         "INFO",
     )
 
@@ -420,6 +430,7 @@ def run_repl(
             print("  /audit <filepath>  - Run InfoSec static security audit on a specific source file")
             print("  /scan-vuln         - Scan all Python files in workspace for security vulnerabilities")
             print("  /run <filepath>    - Directly execute a Python script file in sandbox runner")
+            print("  /edit <file> <cmd> - Edit a file with AI assistance")
             print("  /diff [file]       - Preview unified code diff between prior and latest code generations")
             print("  /sessions          - List all saved REPL chat & command sessions")
             print("  /resume <id>       - Resume/load a saved session by ID")
@@ -653,6 +664,45 @@ def run_repl(
             continue
 
         # Determine intent: Code/Task Generation vs Conversational Chat
+        # Check for /edit command first
+        if user_input.startswith("/edit"):
+            parts = user_input.split(maxsplit=2)
+            if len(parts) < 3:
+                print_step("EDIT", "Usage: /edit <filepath> <instruction>", "WARN")
+                continue
+            target_file = Path(parts[1])
+            instruction = parts[2]
+
+            if not target_file.exists():
+                print_step("EDIT", f"File not found: {target_file}", "FAIL")
+                continue
+
+            existing_code = target_file.read_text(encoding="utf-8", errors="replace")
+            edit_prompt = f"Modify this Python file according to the instruction.\nInstruction: {instruction}\n\nExisting code:\n{existing_code}\n\nOutput the complete modified file in ```python ... ``` block."
+
+            with Spinner(f"Editing {target_file.name}...") as sp:
+                res = agent.run_agentic_loop(
+                    prompt=edit_prompt,
+                    max_retries=1,
+                    gen_tokens=gen_tokens,
+                    incremental=incremental,
+                )
+                sp.set_result(f"{len(res['code'].splitlines())} lines")
+
+            if res["code"] and res["code"] != existing_code:
+                diff = agent.generate_diff(existing_code, res["code"], fromfile=str(target_file), tofile=f"{target_file} (edited)")
+                print_diff_box(diff, title=f"Preview: {target_file.name}")
+                ask = input(f"Apply changes to {target_file}? [y/N] ").strip().lower()
+                if ask == "y":
+                    target_file.write_text(res["code"], encoding="utf-8")
+                    print_tool("save", str(target_file), f"→ {len(res['code'].splitlines())} lines")
+                    print_step("EDIT", f"Changes applied to {target_file}", "SUCCESS")
+                else:
+                    print_step("EDIT", "Edit discarded.", "INFO")
+            else:
+                print_step("EDIT", "No changes generated.", "WARN")
+            continue
+
         task_keywords = {
             "code", "script", "program", "task", "create", "make", "write", "build", "generate",
             "calculator", "calendar", "scanner", "hash", "folder", "directory", "file",
@@ -668,6 +718,21 @@ def run_repl(
             if not code_prompt:
                 print_step("AGENT", "Usage: /code <python task prompt>", "WARN")
                 continue
+
+            # Inject workspace context for better code generation
+            workspace_files = []
+            for f in Path.cwd().glob("*.py"):
+                if f.stat().st_size < 10000:  # Skip large files
+                    try:
+                        lines = f.read_text(encoding="utf-8").splitlines()[:10]
+                        workspace_files.append(f"{f.name}: {len(lines)} lines header")
+                    except Exception:
+                        pass
+            ws_context = ""
+            if workspace_files:
+                ws_context = f"\nWorking directory: {Path.cwd()}\nExisting files: {', '.join(workspace_files)}\n"
+
+            full_prompt = f"{persona_prefix}\n{ws_context}{user_input}"
 
             with Spinner(f"Thinking about: {code_prompt[:50]}...") as sp:
                 res = agent.run_agentic_loop(

@@ -14,6 +14,25 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
 
+def _diagnose_error(stderr: str) -> str:
+    """Analyze error output and return targeted fix guidance."""
+    if "ImportError" in stderr or "ModuleNotFoundError" in stderr:
+        return "Missing import. Use only Python stdlib modules (os, sys, json, pathlib, csv, hashlib, etc)."
+    if "FileNotFoundError" in stderr:
+        return "File path may be wrong. Use os.path.exists() to check before opening."
+    if "PermissionError" in stderr:
+        return "No permission. Do not write to system directories. Use relative paths only."
+    if "SyntaxError" in stderr:
+        return f"Python syntax error. Check parentheses, indentation, colons.\nError: {stderr[:200]}"
+    if "AttributeError" in stderr:
+        return f"Wrong attribute or method. Check the object type and available methods.\nError: {stderr[:200]}"
+    if "TypeError" in stderr:
+        return f"Wrong type passed to function. Check argument types.\nError: {stderr[:200]}"
+    if "IndexError" in stderr or "KeyError" in stderr:
+        return f"Invalid index or key. Check bounds before accessing.\nError: {stderr[:200]}"
+    return None
+
+
 class LocalModelRunner:
     """
     LocalModelRunner handles loading and running inference for local trained models
@@ -530,8 +549,11 @@ class KimiAgent:
             tmp_script = Path(tmp_dir) / "temp_agent_code.py"
 
             for attempt in range(1, max_retries + 1):
-                # Route through LocalModelRunner's native tokenizer when available
+                # Route through LlamaCppBackend or LocalModelRunner when available
                 if isinstance(model, LocalModelRunner) and model.loaded:
+                    model_resp = model.generate(current_prompt, n_new=gen_tokens)
+                elif hasattr(model, "generate") and hasattr(model, "model_name"):
+                    # LlamaCppBackend — only takes string prompts
                     model_resp = model.generate(current_prompt, n_new=gen_tokens)
                 elif model is not None and hasattr(model, "generate"):
                     import torch
@@ -593,6 +615,9 @@ class KimiAgent:
                     }
 
                 truncated_err = exec_res['stderr'][:500] if exec_res['stderr'] else "Unknown error"
+                diagnosis = _diagnose_error(exec_res.get("stderr", ""))
+                if diagnosis:
+                    truncated_err = diagnosis
                 if attempt >= 2:
                     # Summarize: keep only original prompt + latest error
                     current_prompt = (
