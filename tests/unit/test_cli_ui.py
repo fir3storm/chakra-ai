@@ -12,7 +12,7 @@ root_dir = Path(__file__).parent.parent.parent
 if str(root_dir) not in sys.path:
     sys.path.insert(0, str(root_dir))
 
-from chakra.ui import clear_screen, print_banner, print_code_box, print_step
+from chakra.ui import print_banner, print_code_box, print_step
 from chakra.cli import run_repl
 
 
@@ -71,12 +71,12 @@ class TestKimipyUI(unittest.TestCase):
         out = buf.getvalue()
         self.assertEqual(mock_input.call_args[0][0], "(chakra-ai) > ")
         self.assertIn("Exiting Chakra-AI Agentic Terminal", out)
-        mock_agent.run_agentic_loop.assert_called_once_with(
-            prompt="Write a print hello script",
-            max_retries=3,
-            gen_tokens=16,
-            incremental=True,
-        )
+        mock_agent.run_agentic_loop.assert_called_once()
+        call_kwargs = mock_agent.run_agentic_loop.call_args.kwargs
+        self.assertIn("Write a print hello script", call_kwargs["prompt"])
+        self.assertEqual(call_kwargs["max_retries"], 3)
+        self.assertEqual(call_kwargs["gen_tokens"], 16)
+        self.assertEqual(call_kwargs["incremental"], True)
 
     def test_run_repl_shortcuts(self):
         mock_model = MagicMock()

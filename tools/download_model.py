@@ -3,8 +3,6 @@
 Script to download/initialize local trained model Qwen2.5-Coder-1.5B in models/chakra_local/
 Author & Creator: Abhirup Guha (Info Security Solution)
 """
-import os
-import sys
 from pathlib import Path
 
 MODEL_DIR = Path("models/chakra_local")

@@ -325,7 +325,6 @@ class DirectReader:
         elif sys.platform == "win32":
             try:
                 import ctypes
-                from ctypes import wintypes
 
                 kernel32 = ctypes.windll.kernel32
                 FILE_FLAG_NO_BUFFERING = 0x20000000

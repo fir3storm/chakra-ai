@@ -16,7 +16,7 @@ import base64
 import json
 import os
 from pathlib import Path
-from typing import Any, Dict, List, Sequence, Set, Tuple, Union
+from typing import Any, Dict, List, Sequence, Set
 
 # Default split pattern string for Kimi K3 BPE tokenizer
 DEFAULT_PAT_STR = (

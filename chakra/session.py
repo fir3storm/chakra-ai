@@ -4,7 +4,6 @@ Session Manager for local persistence of chat history, code artifacts, and multi
 
 from datetime import datetime
 import json
-import os
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 import uuid

@@ -67,19 +67,20 @@ class LocalModelRunner:
                 # Fused optimizations
                 torch.set_float32_matmul_precision('high')
 
+                model_dtype = torch.float32 if self.device == "cpu" else torch.float16
                 self.tokenizer = AutoTokenizer.from_pretrained(
                     str(self.model_path), trust_remote_code=True
                 )
                 self.model = AutoModelForCausalLM.from_pretrained(
                     str(self.model_path),
                     trust_remote_code=True,
-                    dtype=torch.float16,               # Half precision — cuts RAM from 6GB to 3GB
-                    low_cpu_mem_usage=True,              # Don't load full model then discard
+                    dtype=model_dtype,
+                    low_cpu_mem_usage=(self.device != "cpu"),
                 ).to(self.device)
                 self.model.eval()
                 self.loaded = True
-                print(f"[INFO] Model loaded with {num_threads} threads, float16 precision")
-            except Exception as e:
+                print(f"[INFO] Model loaded on {self.device} with {num_threads} threads ({model_dtype})")
+            except Exception:
                 # Fallback: try loading as float32 if float16 fails
                 try:
                     from transformers import AutoModelForCausalLM, AutoTokenizer
@@ -90,11 +91,11 @@ class LocalModelRunner:
                         str(self.model_path),
                         trust_remote_code=True,
                         dtype=torch.float32,
-                        low_cpu_mem_usage=True,
+                        low_cpu_mem_usage=False,
                     ).to(self.device)
                     self.model.eval()
                     self.loaded = True
-                    print("[WARN] Float16 failed, loaded as float32")
+                    print("[WARN] Primary model load failed, loaded as float32 fallback")
                 except Exception as e2:
                     self.loaded = False
                     self.model = None

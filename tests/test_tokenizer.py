@@ -13,7 +13,7 @@ import unittest
 
 import torch
 
-from chakra.tokenizer import KimiTokenizer, find_tokenizer_files
+from chakra.tokenizer import KimiTokenizer
 
 
 class TestKimiTokenizerFallback(unittest.TestCase):

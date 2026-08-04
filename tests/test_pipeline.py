@@ -3,11 +3,9 @@ Agentic Pipeline Integration Tests for Chakra-AI.
 Tests the full prompt → architect → coder → auditor → sandbox pipeline.
 Author & Creator: Abhirup Guha (Info Security Solution)
 """
-import os
 import sys
 import tempfile
 from pathlib import Path
-from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -17,7 +15,6 @@ from chakra.agent import KimiAgent
 from chakra.multi_agent import (
     ArchitectAgent,
     AuditorAgent,
-    CoderAgent,
     MultiAgentOrchestrator,
 )
 

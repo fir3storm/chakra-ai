@@ -2,15 +2,12 @@ import argparse
 import ast
 import datetime
 import json
-import os
 from pathlib import Path
-import platform
 import re
 import sys
 import time
 from typing import Any, Dict, List, Optional, Union
 
-import torch
 
 from chakra.agent import KimiAgent, LocalModelRunner
 from chakra.engine_llama import LlamaCppBackend
@@ -31,7 +28,6 @@ from chakra.ui import (
     print_sessions_list,
     print_step,
     print_tool,
-    progress_bar,
     print_vuln_report,
 )
 
@@ -350,7 +346,6 @@ def run_repl(
     print_step("SESSION", f"Active Session ID: {active_session_id}", "INFO")
 
     # System context for accurate responses
-    import datetime
     now = datetime.datetime.now()
     system_info = f"{now.strftime('%A, %B %d, %Y %H:%M')} | {sys.platform}"
     print_step("SYSTEM", system_info, "INFO")
@@ -651,6 +646,8 @@ def run_repl(
                 print_step("TEAM", "Usage: /team <prompt>", "WARN")
                 continue
             team_prompt = parts[1].strip()
+            now = datetime.now()
+            date_context = f"Current date: {now.strftime('%A, %B %d, %Y %H:%M')}. OS: {sys.platform}."
             persona_prefix = persona_mgr.get_system_prompt()
             full_prompt = f"{date_context}\n{persona_prefix}\n{team_prompt}"
             print_step("TEAM", f"[{active_persona.upper()}] Launching Team Collaboration: '{team_prompt}'...", "WAIT")
@@ -828,9 +825,9 @@ def run_repl(
             continue
 
         task_keywords = {
-            "script", "program", "task", "create", "make", "write", "build", "generate",
-            "calculator", "calendar", "scanner", "hash", "folder", "directory",
-            "function", "class", "module", "api", "app", "fix", "debug", "refactor",
+            "create ", "make ", "write ", "build ", "generate ",
+            "calculator", "calendar", "scanner ", "hash ", "folder ", "directory ",
+            "function ", "class ", "module ", "api ", "app ", "refactor ",
         }
         is_code_task = user_input.startswith("/code") or any(k in user_input.lower() for k in task_keywords)
 
@@ -848,24 +845,25 @@ def run_repl(
                 print_step("AGENT", "Usage: /code <python task prompt>", "WARN")
                 continue
 
-            # Inject workspace context for better code generation
+            # Inject workspace context
             workspace_files = []
             for f in Path.cwd().glob("*.py"):
-                if f.stat().st_size < 10000:  # Skip large files
+                if f.stat().st_size < 10000:
                     try:
                         lines = f.read_text(encoding="utf-8").splitlines()[:10]
-                        workspace_files.append(f"{f.name}: {len(lines)} lines header")
+                        workspace_files.append(f"{f.name}")
                     except Exception:
                         pass
             ws_context = ""
             if workspace_files:
                 ws_context = f"\nWorking directory: {Path.cwd()}\nExisting files: {', '.join(workspace_files)}\n"
 
-            full_prompt = f"{date_context}\n{persona_prefix}{memory_context}\n{ws_context}{user_input}"
+            # Clean prompt — workspace only, no date/persona context
+            clean_code_prompt = f"Write a complete, runnable Python script for the following request:\n{ws_context}{code_prompt}\nEnclose python code in ```python ... ``` code block."
 
             with Spinner(f"Thinking about: {code_prompt[:50]}...") as sp:
                 res = agent.run_agentic_loop(
-                    prompt=full_prompt,
+                    prompt=clean_code_prompt,
                     max_retries=3,
                     gen_tokens=gen_tokens,
                     incremental=incremental,
@@ -881,11 +879,11 @@ def run_repl(
                 output_dir.mkdir(exist_ok=True)
                 code_file = output_dir / "generated_script.py"
                 code_file.write_text(last_code, encoding="utf-8")
-                print_tool("save", f"chakra_output/generated_script.py", f"→ {len(last_code.splitlines())} lines")
+                print_tool("save", "chakra_output/generated_script.py", f"→ {len(last_code.splitlines())} lines")
 
                 exec_res = agent.run_in_sandbox(code_file, timeout=30)
                 if exec_res["success"]:
-                    print_tool("execute", "Sandbox execution", f"→ Exit 0")
+                    print_tool("execute", "Sandbox execution", "→ Exit 0")
                     if exec_res["stdout"].strip():
                         print_chat_role("assistant", exec_res["stdout"].strip())
                 else:

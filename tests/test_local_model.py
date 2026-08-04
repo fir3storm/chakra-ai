@@ -2,9 +2,7 @@
 Tests for Option B: LocalModelRunner and CLI integration.
 Author & Creator: Abhirup Guha (Info Security Solution)
 """
-import os
 import sys
-import tempfile
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -64,7 +62,6 @@ class TestLocalModelRunner:
     @patch("builtins.__import__")
     def test_runner_load_with_mock_model(self, mock_import, tmp_path):
         """Runner should attempt to load model when directory exists with files."""
-        import torch
 
         model_dir = tmp_path / "model_with_files"
         model_dir.mkdir()
@@ -180,7 +177,6 @@ class TestCLIOptionB:
 
     def test_cli_arg_parser_has_local_model_flag(self):
         """CLI arg parser should have --local-model flag."""
-        import argparse
         from chakra.cli import main
         # We test that main can parse --local-model without error
         # by checking the parser setup doesn't crash

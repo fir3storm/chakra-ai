@@ -3,7 +3,6 @@ Unit tests for KimiAgent in chakra.agent.
 """
 
 import os
-import sys
 import tempfile
 import unittest
 from pathlib import Path

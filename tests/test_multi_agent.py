@@ -3,7 +3,6 @@ Unit tests for Multi-Agent Orchestration system in chakra.multi_agent.
 """
 
 import ast
-import os
 import tempfile
 import unittest
 from pathlib import Path

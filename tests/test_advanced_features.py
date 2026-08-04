@@ -3,7 +3,6 @@ Unit tests for advanced features in chakra:
 WorkspaceIndexer, SessionManager, InfoSecAuditor, PersonaManager, and diff/runner functions.
 """
 
-import json
 import os
 from pathlib import Path
 import tempfile

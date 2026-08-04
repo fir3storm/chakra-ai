@@ -4,9 +4,8 @@ Workspace Indexer for scanning project source files, extracting signatures, buil
 
 import ast
 import json
-import os
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 
 class WorkspaceIndexer:

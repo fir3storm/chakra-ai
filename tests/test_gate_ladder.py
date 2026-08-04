@@ -3,13 +3,8 @@ Gate Ladder Tests for Chakra-AI verification.
 Mirrors kimi-k3-in-c's validation approach: each gate must pass before the next is meaningful.
 Author & Creator: Abhirup Guha (Info Security Solution)
 """
-import ast
-import hashlib
-import os
 import sys
-import tempfile
 from pathlib import Path
-from unittest.mock import MagicMock, patch
 
 import pytest
 

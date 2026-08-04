@@ -123,7 +123,7 @@ class LlamaCppBackend:
     ):
         """Stream tokens as they are generated."""
         if not self.loaded or self.model is None:
-            yield f"[llama.cpp] Backend not loaded."
+            yield "[llama.cpp] Backend not loaded."
             return
 
         try:
@@ -204,7 +204,7 @@ if __name__ == "__main__":
         if backend.loaded:
             health = backend.check_health()
             print(f"Backend: {health}")
-            print(f"\nTest prompt: 'Write hello world in Python'")
+            print("\nTest prompt: 'Write hello world in Python'")
             print(backend.generate("Write hello world in Python", n_new=64))
         else:
             print("Backend not loaded. Install llama-cpp-python and download GGUF model.")

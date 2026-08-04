@@ -4,11 +4,9 @@ Unit test suite for chakra terminal UI components and REPL prompt handling.
 
 from io import StringIO
 import os
-import sys
 import unittest
 from unittest.mock import MagicMock, patch
 
-import torch
 
 from chakra.agent import KimiAgent
 from chakra.cli import run_repl
@@ -95,7 +93,7 @@ class TestREPLPromptHandling(unittest.TestCase):
         self.agent = KimiAgent(model=self.model, tokenizer=self.tokenizer, device="cpu")
 
     def test_repl_direct_prompt_without_code(self) -> None:
-        user_inputs = ["Write hello world script", "/exit"]
+        user_inputs = ["make hello world script", "/exit"]
         captured_output = StringIO()
 
         mock_agent = MagicMock()
@@ -120,13 +118,13 @@ class TestREPLPromptHandling(unittest.TestCase):
 
         output = captured_output.getvalue()
         self.assertIn("Chakra-AI Agentic Terminal Active", output)
-        self.assertIn("Thinking about: Write hello world script", output)
+        self.assertIn("Thinking about: make hello world script", output)
         self.assertIn("chakra_output/generated_script.py", output)
         self.assertIn("Exiting Chakra-AI", output)
 
         mock_agent.run_agentic_loop.assert_called_once()
         call_kwargs = mock_agent.run_agentic_loop.call_args.kwargs
-        self.assertIn("Write hello world script", call_kwargs["prompt"])
+        self.assertIn("make hello world script", call_kwargs["prompt"])
 
     def test_repl_code_prefix_handling(self) -> None:
         user_inputs = ["/code Write fibonacci", "/exit"]
@@ -157,7 +155,7 @@ class TestREPLPromptHandling(unittest.TestCase):
         self.assertIn("Write fibonacci", call_kwargs["prompt"])
 
     def test_repl_direct_prompt_failure_handling(self) -> None:
-        user_inputs = ["Broken task", "quit"]
+        user_inputs = ["make broken task", "quit"]
         captured_output = StringIO()
 
         mock_agent = MagicMock()
@@ -181,7 +179,7 @@ class TestREPLPromptHandling(unittest.TestCase):
             )
 
         output = captured_output.getvalue()
-        self.assertIn("Thinking about: Broken task", output)
+        self.assertIn("Thinking about: make broken task", output)
         self.assertIn("chakra_output/generated_script.py", output)
 
 

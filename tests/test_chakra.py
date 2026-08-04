@@ -20,7 +20,6 @@ from chakra import (
     ExpertLRUCache,
     KimiConfig,
     SafetensorsReader,
-    TensorInfo,
     TrunkStreamer,
     dequantize_mxfp4_numpy,
     dequantize_mxfp4_torch,

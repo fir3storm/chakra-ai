@@ -10,7 +10,7 @@ persona listing and switching across multi-agent workflows.
 from __future__ import annotations
 
 import copy
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
 
 class PersonaManager:
