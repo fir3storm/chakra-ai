@@ -42,27 +42,14 @@ venv/
 .pytest_cache/
 .kimipy_sessions/
 .chakra_benchmark.json
+.chakra_sessions/
 chakra_output/
 models/
 
-# editors / os
+# editors / os / misc
 .vscode/
 .idea/
 .DS_Store
+.commandcode/
 *.swp
-*~
-
-# ----------------------------------------------------------------------------------
-# Test fixtures are PART OF THE REPOSITORY and must survive every rule above.
-#
-# `make test` is this project's correctness gate, and it deliberately runs without model
-# weights, but only if the fixtures are present in the clone. Without these re-includes
-# the rules above silently drop tests/fixtures/{cache,st}/ (synthetic .safetensors
-# shards), expert_trace.bin, and the recorded reference logs. A fresh clone would then
-# build cleanly and fail its own test suite, which is a bad first impression and a
-# confusing one to debug.
-!tests/fixtures/
-!tests/fixtures/**
-".chakra_sessions/"  
-".chakra_sessions/"  
-".commandcode/" 
+*~ 
