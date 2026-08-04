@@ -54,7 +54,7 @@ class LocalModelRunner:
                 self.model = AutoModelForCausalLM.from_pretrained(
                     str(self.model_path),
                     trust_remote_code=True,
-                    torch_dtype=torch.float16,          # Half precision — cuts RAM from 6GB to 3GB
+                    dtype=torch.float16,               # Half precision — cuts RAM from 6GB to 3GB
                     low_cpu_mem_usage=True,              # Don't load full model then discard
                 ).to(self.device)
                 self.model.eval()
@@ -70,7 +70,7 @@ class LocalModelRunner:
                     self.model = AutoModelForCausalLM.from_pretrained(
                         str(self.model_path),
                         trust_remote_code=True,
-                        torch_dtype=torch.float32,
+                        dtype=torch.float32,
                         low_cpu_mem_usage=True,
                     ).to(self.device)
                     self.model.eval()

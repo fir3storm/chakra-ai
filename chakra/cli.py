@@ -705,13 +705,13 @@ def run_repl(
                 (isinstance(model, LlamaCppBackend) and model.loaded)
             )
             if has_stream:
-                with Spinner("Thinking...") as sp:
-                    full_response = []
-                    for chunk in model.generate_stream(full_prompt, n_new=gen_tokens):
-                        full_response.append(chunk)
-                        print(chunk, end="", flush=True)
-                    sp.set_result(f"{len(full_response)} chunks")
-                print()  # newline after stream
+                # Disable spinner for streaming — it fights with token output
+                print_step("ASSISTANT", "", "INFO")
+                full_response = []
+                for chunk in model.generate_stream(full_prompt, n_new=gen_tokens):
+                    full_response.append(chunk)
+                    print(chunk, end="", flush=True)
+                print(flush=True)  # final newline
             else:
                 chat_reply = agent.chat(full_prompt, gen_tokens=gen_tokens, incremental=incremental)
                 print_chat_role("assistant", chat_reply)
@@ -876,6 +876,8 @@ def main(args: Optional[List[str]] = None) -> int:
         model.eval()
 
     # Initialize agent (auto-detects local model if model is None)
+    if isinstance(model, LlamaCppBackend):
+        torch = None  # Don't load PyTorch model when llama.cpp is active
     agent = KimiAgent(model=model, tokenizer=tokenizer, device=parsed.device)
     if model is None:
         model = agent.model
