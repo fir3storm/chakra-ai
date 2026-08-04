@@ -837,7 +837,9 @@ def run_repl(
         persona_prefix = persona_mgr.get_system_prompt()
         date_context = f"Current date: {now.strftime('%A, %B %d, %Y %H:%M')}. OS: {sys.platform}."
         memory_context = f"\nProject knowledge: {project_memory}" if project_memory else ""
-        full_prompt = f"{date_context}\n{persona_prefix}{memory_context}\n{user_input}"
+        # Build system message — never echoed by the model
+        system_msg = f"{date_context}\n{persona_prefix}{memory_context}"
+        full_prompt = user_input  # Clean user message only
         ws_context = ""  # filled below for code tasks
 
         if is_code_task:
@@ -897,20 +899,10 @@ def run_repl(
                 (isinstance(model, LlamaCppBackend) and model.loaded)
             )
             if has_stream:
-                # Streaming mode — collect and filter response
                 print_step("ASSISTANT", "", "INFO")
                 full_response = []
-                first_chunk_printed = False
-                for chunk in model.generate_stream(full_prompt, n_new=gen_tokens):
+                for chunk in model.generate_stream(full_prompt, n_new=gen_tokens, system=system_msg):
                     full_response.append(chunk)
-                    # Skip any echoed system context at the start
-                    chunk_lower = chunk.lower()
-                    if not first_chunk_printed and any(
-                        prefix in chunk_lower for prefix in
-                        ("current date:", "persona:", "os:", "project knowledge:", "you are the")
-                    ):
-                        continue
-                    first_chunk_printed = True
                     print(chunk, end="", flush=True)
                 print(flush=True)  # final newline
             else:

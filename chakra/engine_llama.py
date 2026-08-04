@@ -84,14 +84,28 @@ class LlamaCppBackend:
         n_new: int = 192,
         temperature: float = 0.7,
         top_p: float = 0.9,
+        system: str = "",
     ) -> str:
-        """Generate text from prompt using llama.cpp chat completion."""
+        """Generate text from prompt using llama.cpp chat completion.
+
+        Args:
+            prompt: User message.
+            n_new: Max tokens to generate.
+            temperature: Sampling temperature.
+            top_p: Top-p sampling.
+            system: Optional system message (never echoed in response).
+        """
         if not self.loaded or self.model is None:
             return f"[llama.cpp] Backend not loaded. Prompt: {prompt}"
 
         try:
+            messages = []
+            if system:
+                messages.append({"role": "system", "content": system})
+            messages.append({"role": "user", "content": prompt})
+
             response = self.model.create_chat_completion(
-                messages=[{"role": "user", "content": prompt}],
+                messages=messages,
                 max_tokens=n_new,
                 temperature=temperature,
                 top_p=top_p,
@@ -101,15 +115,25 @@ class LlamaCppBackend:
         except Exception as e:
             return f"[llama.cpp] Error: {e}"
 
-    def generate_stream(self, prompt: str, n_new: int = 192):
+    def generate_stream(
+        self,
+        prompt: str,
+        n_new: int = 192,
+        system: str = "",
+    ):
         """Stream tokens as they are generated."""
         if not self.loaded or self.model is None:
             yield f"[llama.cpp] Backend not loaded."
             return
 
         try:
+            messages = []
+            if system:
+                messages.append({"role": "system", "content": system})
+            messages.append({"role": "user", "content": prompt})
+
             response = self.model.create_chat_completion(
-                messages=[{"role": "user", "content": prompt}],
+                messages=messages,
                 max_tokens=n_new,
                 temperature=0.7,
                 stream=True,
