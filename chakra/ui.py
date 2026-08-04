@@ -231,7 +231,7 @@ def print_banner() -> None:
      │  ▐▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▌  │
      └──────────────────────────────────────────────┘{c.RESET}
     {c.BRIGHT_BLACK}  Agentic Code Terminal · Offline · No GPU · 8GB RAM
-    {c.BRIGHT_BLACK}  github.com/fir3storm/chakra-ai{c.RESET}
+    {c.WHITE}  Made by {c.BRIGHT_GREEN}Abhirup Guha{c.WHITE} · {c.BRIGHT_CYAN}Info Security Solution{c.WHITE} · {c.BRIGHT_BLUE}insec.in{c.RESET}
     """
     _safe_print(logo)
 

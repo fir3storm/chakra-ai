@@ -81,7 +81,7 @@ class TestTerminalUI(unittest.TestCase):
 
         output = captured_output.getvalue()
         self.assertIn("C H A K R A", output)
-        self.assertIn("github.com/fir3storm/chakra-ai", output)
+        self.assertIn("insec.in", output)
 
 
 class TestREPLPromptHandling(unittest.TestCase):

@@ -828,9 +828,9 @@ def run_repl(
             continue
 
         task_keywords = {
-            "code", "script", "program", "task", "create", "make", "write", "build", "generate",
-            "calculator", "calendar", "scanner", "hash", "folder", "directory", "file",
-            "function", "class", "module", "api", "app", "fix", "debug", "refactor", "run", "audit"
+            "script", "program", "task", "create", "make", "write", "build", "generate",
+            "calculator", "calendar", "scanner", "hash", "folder", "directory",
+            "function", "class", "module", "api", "app", "fix", "debug", "refactor",
         }
         is_code_task = user_input.startswith("/code") or any(k in user_input.lower() for k in task_keywords)
 
@@ -897,11 +897,20 @@ def run_repl(
                 (isinstance(model, LlamaCppBackend) and model.loaded)
             )
             if has_stream:
-                # Disable spinner for streaming — it fights with token output
+                # Streaming mode — collect and filter response
                 print_step("ASSISTANT", "", "INFO")
                 full_response = []
+                first_chunk_printed = False
                 for chunk in model.generate_stream(full_prompt, n_new=gen_tokens):
                     full_response.append(chunk)
+                    # Skip any echoed system context at the start
+                    chunk_lower = chunk.lower()
+                    if not first_chunk_printed and any(
+                        prefix in chunk_lower for prefix in
+                        ("current date:", "persona:", "os:", "project knowledge:", "you are the")
+                    ):
+                        continue
+                    first_chunk_printed = True
                     print(chunk, end="", flush=True)
                 print(flush=True)  # final newline
             else:
