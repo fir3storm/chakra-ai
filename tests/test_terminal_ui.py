@@ -119,8 +119,8 @@ class TestREPLPromptHandling(unittest.TestCase):
         output = captured_output.getvalue()
         self.assertIn("Chakra-AI Agentic Terminal Active", output)
         self.assertIn("Thinking about: make hello world script", output)
-        self.assertIn("chakra_output/generated_script.py", output)
         self.assertIn("Exiting Chakra-AI", output)
+        self.assertIn("generated_script", output)
 
         mock_agent.run_agentic_loop.assert_called_once()
         call_kwargs = mock_agent.run_agentic_loop.call_args.kwargs
@@ -180,7 +180,7 @@ class TestREPLPromptHandling(unittest.TestCase):
 
         output = captured_output.getvalue()
         self.assertIn("Thinking about: make broken task", output)
-        self.assertIn("chakra_output/generated_script.py", output)
+        self.assertIn("generated_script", output)
 
 
 if __name__ == "__main__":

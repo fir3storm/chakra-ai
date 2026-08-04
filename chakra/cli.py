@@ -859,8 +859,43 @@ def run_repl(
             if workspace_files:
                 ws_context = f"\nWorking directory: {Path.cwd()}\nExisting files: {', '.join(workspace_files)}\n"
 
-            # Clean prompt — workspace only, no date/persona context
-            clean_code_prompt = f"Write a complete, runnable Python script for the following request:\n{ws_context}{code_prompt}\nEnclose python code in ```python ... ``` code block."
+            # Detect target language/filename from user prompt
+            target_ext = ".py"
+            target_lang = "Python"
+            for word in code_prompt.lower().replace(".", " ").replace(",", " ").split():
+                if word in ("php", ".php"):
+                    target_ext = ".php"
+                    target_lang = "PHP"
+                elif word in ("html", ".html"):
+                    target_ext = ".html"
+                    target_lang = "HTML"
+                elif word in ("js", "javascript", ".js"):
+                    target_ext = ".js"
+                    target_lang = "JavaScript"
+                elif word in ("css", ".css"):
+                    target_ext = ".css"
+                    target_lang = "CSS"
+                elif word in ("sh", "bash", "shell", ".sh"):
+                    target_ext = ".sh"
+                    target_lang = "Bash"
+
+            # Detect output filename from prompt
+            output_filename = None
+            for word in code_prompt.replace("=", " ").replace(":", " ").replace('"', ' ').replace("'", " ").split():
+                if "." in word and len(word) > 2 and word.count(".") == 1:
+                    ext = word.split(".")[-1].lower()
+                    if ext in ("py", "php", "html", "js", "css", "sh", "json", "yaml", "md", "txt", "bat", "ps1"):
+                        output_filename = word
+                        target_ext = f".{ext}"
+                        target_lang = ext.upper()
+                        break
+
+            # Clean prompt — detect and respect target language
+            if target_lang != "Python":
+                code_fence = f"```{target_ext[1:]}" if target_ext[1:] != "py" else "```python"
+                clean_code_prompt = f"Write a complete {target_lang} script for the following request. Enclose code in {code_fence} code block. Do NOT include any explanatory text — output ONLY the code:\n{ws_context}{code_prompt}"
+            else:
+                clean_code_prompt = f"Write a complete, runnable Python script for the following request:\n{ws_context}{code_prompt}\nEnclose python code in ```python ... ``` code block."
 
             with Spinner(f"Thinking about: {code_prompt[:50]}...") as sp:
                 res = agent.run_agentic_loop(
@@ -874,21 +909,28 @@ def run_repl(
             previous_code = last_code
             last_code = res["code"]
 
-            # Auto-save and execute
+            # Auto-save with correct extension + skip execution for non-Python
             try:
                 output_dir = Path("chakra_output")
                 output_dir.mkdir(exist_ok=True)
-                code_file = output_dir / "generated_script.py"
-                code_file.write_text(last_code, encoding="utf-8")
-                print_tool("save", "chakra_output/generated_script.py", f"→ {len(last_code.splitlines())} lines")
-
-                exec_res = agent.run_in_sandbox(code_file, timeout=30)
-                if exec_res["success"]:
-                    print_tool("execute", "Sandbox execution", "→ Exit 0")
-                    if exec_res["stdout"].strip():
-                        print_chat_role("assistant", exec_res["stdout"].strip())
+                if output_filename:
+                    code_file = output_dir / output_filename
                 else:
-                    print_tool("error", "Sandbox execution failed", f"→ {exec_res.get('stderr', '')[:80]}")
+                    code_file = output_dir / f"generated_script{target_ext}"
+                code_file.write_text(last_code, encoding="utf-8")
+                print_tool("save", str(code_file), f"→ {len(last_code.splitlines())} lines")
+
+                # Only sandbox execute Python files
+                if target_ext == ".py":
+                    exec_res = agent.run_in_sandbox(code_file, timeout=30)
+                    if exec_res["success"]:
+                        print_tool("execute", "Sandbox execution", "→ Exit 0")
+                        if exec_res["stdout"].strip():
+                            print_chat_role("assistant", exec_res["stdout"].strip())
+                    else:
+                        print_tool("error", "Sandbox execution failed", f"→ {exec_res.get('stderr', '')[:80]}")
+                else:
+                    print_tool("info", f"{target_lang} file saved (no execution)")
             except Exception as err:
                 print_tool("error", f"Failed: {err}")
         else:
