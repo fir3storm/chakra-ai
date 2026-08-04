@@ -13,7 +13,7 @@ setup(
     author="Abhirup Guha (Info Security Solution)",
     author_email="abhirupguha@infosecuritysolution.com",
     url="https://github.com/InfoSecuritySolution/KimiWin-Py",
-    packages=find_packages(include=["kimipy", "kimipy.*"]),
+    packages=find_packages(include=["chakra", "chakra.*"]),
     python_requires=">=3.8",
     install_requires=[
         "torch>=2.0.0",

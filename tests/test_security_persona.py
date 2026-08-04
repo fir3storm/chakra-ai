@@ -1,12 +1,12 @@
 """
-Unit tests for InfoSecAuditor (kimipy.security) and PersonaManager (kimipy.persona).
+Unit tests for InfoSecAuditor (chakra.security) and PersonaManager (chakra.persona).
 """
 
 import tempfile
 from pathlib import Path
 import unittest
 
-from kimipy import InfoSecAuditor, PersonaManager
+from chakra import InfoSecAuditor, PersonaManager
 
 
 class TestInfoSecAuditor(unittest.TestCase):

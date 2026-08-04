@@ -21,7 +21,7 @@ class Gate1_TokenizerParity:
 
     def test_fallback_roundtrip(self):
         """UTF-8 fallback tokenizer must roundtrip ASCII text."""
-        from kimipy.tokenizer import KimiTokenizer
+        from chakra.tokenizer import KimiTokenizer
         tok = KimiTokenizer(mode="auto")
         text = "Hello, world! The capital of France is Paris."
         ids = tok.encode(text)
@@ -33,7 +33,7 @@ class Gate1_TokenizerParity:
 
     def test_empty_input(self):
         """Tokenizer must handle empty input gracefully."""
-        from kimipy.tokenizer import KimiTokenizer
+        from chakra.tokenizer import KimiTokenizer
         tok = KimiTokenizer(mode="auto")
         ids = tok.encode("")
         assert ids == [] or ids == [0]  # Depending on mode
@@ -41,7 +41,7 @@ class Gate1_TokenizerParity:
     def test_decode_tensor(self):
         """Tokenizer must decode torch tensors."""
         import torch
-        from kimipy.tokenizer import KimiTokenizer
+        from chakra.tokenizer import KimiTokenizer
         tok = KimiTokenizer(mode="auto")
         tensor = torch.tensor([[72, 101, 108, 108, 111]])  # "Hello" bytes
         result = tok.decode(tensor[0].tolist())
@@ -53,7 +53,7 @@ class Gate2_ConfigReader:
 
     def test_valid_config(self):
         """K3Config must initialize with correct defaults."""
-        from kimipy.model import K3Config
+        from chakra.model import K3Config
         cfg = K3Config()
         assert cfg.num_hidden_layers == 93
         assert cfg.hidden_size == 7168
@@ -63,7 +63,7 @@ class Gate2_ConfigReader:
 
     def test_tiny_config(self):
         """tiny_config must create a valid miniature model."""
-        from kimipy.model import tiny_config
+        from chakra.model import tiny_config
         cfg = tiny_config()
         assert cfg.num_hidden_layers == 13
         assert cfg.hidden_size == 128
@@ -73,7 +73,7 @@ class Gate2_ConfigReader:
 
     def test_layer_map_consistency(self):
         """Layer map must have KDA + MLA = num_hidden_layers."""
-        from kimipy.model import K3Config
+        from chakra.model import K3Config
         cfg = K3Config()
         kda_count = len(cfg.kda_layers)
         mla_count = len(cfg.mla_layers)
@@ -85,7 +85,7 @@ class Gate3_MXFP4Dequantization:
 
     def test_e2m1_table(self):
         """E2M1 lookup table must match the OCP MXFP4 spec."""
-        from kimipy.dequant import E2M1_TABLE
+        from chakra.dequant import E2M1_TABLE
         expected = [0.0, 0.5, 1.0, 1.5, 2.0, 3.0, 4.0, 6.0,
                     -0.0, -0.5, -1.0, -1.5, -2.0, -3.0, -4.0, -6.0]
         for i, (got, want) in enumerate(zip(E2M1_TABLE, expected)):
@@ -96,7 +96,7 @@ class Gate3_MXFP4Dequantization:
 
     def test_dequant_known_bytes(self):
         """Dequantization of known bytes must produce exact floats."""
-        from kimipy.dequant import dequantize_mxfp4_numpy
+        from chakra.dequant import dequantize_mxfp4_numpy
         import numpy as np
         # Single byte: low nibble = 2 (1.0), high nibble = 7 (6.0)
         # Scale byte = 127 (2^0 = 1.0)
@@ -110,7 +110,7 @@ class Gate3_MXFP4Dequantization:
 
     def test_dequant_nan_scale(self):
         """Scale byte 255 (NaN) must zero out the group."""
-        from kimipy.dequant import dequantize_mxfp4_numpy
+        from chakra.dequant import dequantize_mxfp4_numpy
         import numpy as np
         packed = np.array([0x00], dtype=np.uint8)  # two zeros
         scales = np.array([255], dtype=np.uint8)  # NaN scale
@@ -120,7 +120,7 @@ class Gate3_MXFP4Dequantization:
     def test_fused_vs_dequant_matmul(self):
         """Fused MXFP4 matmul must match dequantize-first path within float32 rounding."""
         import torch
-        from kimipy.ops import matmul_mxfp4, matmul_mxfp4_fused
+        from chakra.ops import matmul_mxfp4, matmul_mxfp4_fused
 
         torch.manual_seed(42)
         in_features = 256
@@ -144,7 +144,7 @@ class Gate3_MXFP4Dequantization:
     def test_fused_batch_matmul(self):
         """Fused matmul must work with batched inputs."""
         import torch
-        from kimipy.ops import matmul_mxfp4_fused
+        from chakra.ops import matmul_mxfp4_fused
 
         torch.manual_seed(123)
         in_features = 128
@@ -167,7 +167,7 @@ class Gate4_ModelForward:
 
     def test_tiny_model_init(self):
         """Tiny model must initialize without errors."""
-        from kimipy.model import K3Model, tiny_config
+        from chakra.model import K3Model, tiny_config
         cfg = tiny_config()
         model = K3Model(cfg)
         assert model is not None
@@ -178,7 +178,7 @@ class Gate4_ModelForward:
     def test_tiny_model_forward_finite(self):
         """Tiny model forward pass must produce finite outputs."""
         import torch
-        from kimipy.model import K3Model, tiny_config
+        from chakra.model import K3Model, tiny_config
         cfg = tiny_config()
         model = K3Model(cfg)
         model.eval()
@@ -191,7 +191,7 @@ class Gate4_ModelForward:
     def test_tiny_model_generate(self):
         """Tiny model must generate tokens without crashing."""
         import torch
-        from kimipy.model import K3Model, tiny_config
+        from chakra.model import K3Model, tiny_config
         cfg = tiny_config()
         model = K3Model(cfg)
         model.eval()
@@ -207,7 +207,7 @@ class Gate5_SandboxIsolation:
 
     def test_sandbox_executes_clean_code(self):
         """Clean code must execute successfully."""
-        from kimipy.agent import KimiAgent
+        from chakra.agent import KimiAgent
         agent = KimiAgent(model=None)
         result = agent.execute_sandbox("print('hello')")
         assert result["success"] is True
@@ -215,7 +215,7 @@ class Gate5_SandboxIsolation:
 
     def test_sandbox_captures_errors(self):
         """Runtime errors must be captured, not crash the process."""
-        from kimipy.agent import KimiAgent
+        from chakra.agent import KimiAgent
         agent = KimiAgent(model=None)
         result = agent.execute_sandbox("raise ValueError('test error')")
         assert result["success"] is False
@@ -223,7 +223,7 @@ class Gate5_SandboxIsolation:
 
     def test_sandbox_timeout(self):
         """Long-running code must be killed by timeout."""
-        from kimipy.agent import KimiAgent
+        from chakra.agent import KimiAgent
         agent = KimiAgent(model=None)
         result = agent.execute_sandbox("import time; time.sleep(60)", timeout=2)
         assert result["success"] is False
@@ -231,14 +231,14 @@ class Gate5_SandboxIsolation:
 
     def test_sandbox_empty_code(self):
         """Empty code must be rejected."""
-        from kimipy.agent import KimiAgent
+        from chakra.agent import KimiAgent
         agent = KimiAgent(model=None)
         result = agent.execute_sandbox("")
         assert result["success"] is False
 
     def test_sandbox_no_write_bytecode(self):
         """Sandbox must set PYTHONDONTWRITEBYTECODE."""
-        from kimipy.agent import KimiAgent
+        from chakra.agent import KimiAgent
         agent = KimiAgent(model=None)
         result = agent.execute_sandbox(
             "import os; print(os.environ.get('PYTHONDONTWRITEBYTECODE', 'NOT_SET'))"

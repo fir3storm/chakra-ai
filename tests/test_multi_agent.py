@@ -1,5 +1,5 @@
 """
-Unit tests for Multi-Agent Orchestration system in kimipy.multi_agent.
+Unit tests for Multi-Agent Orchestration system in chakra.multi_agent.
 """
 
 import ast
@@ -8,7 +8,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from kimipy.multi_agent import (
+from chakra.multi_agent import (
     ArchitectAgent,
     AuditorAgent,
     CoderAgent,

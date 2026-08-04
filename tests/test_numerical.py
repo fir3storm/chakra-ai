@@ -18,7 +18,7 @@ class TestMXFP4Elementwise:
 
     def test_e2m1_all_16_values(self):
         """All 16 E2M1 values must match the spec exactly."""
-        from kimipy.ops import E2M1_VALUES
+        from chakra.ops import E2M1_VALUES
         expected = [0.0, 0.5, 1.0, 1.5, 2.0, 3.0, 4.0, 6.0,
                     -0.0, -0.5, -1.0, -1.5, -2.0, -3.0, -4.0, -6.0]
         for i, want in enumerate(expected):
@@ -30,7 +30,7 @@ class TestMXFP4Elementwise:
 
     def test_e8m0_scale_values(self):
         """E8M0 scale must produce correct powers of two."""
-        from kimipy.ops import E8M0_TORCH
+        from chakra.ops import E8M0_TORCH
         # 2^(b-127) for b in [0, 127, 128, 254], 0.0 for b=255
         assert float(E8M0_TORCH[0]) == pytest.approx(2.0 ** -127, abs=1e-40)
         assert float(E8M0_TORCH[127]) == pytest.approx(1.0, abs=1e-6)
@@ -40,7 +40,7 @@ class TestMXFP4Elementwise:
 
     def test_nibble_order_low_is_even(self):
         """Low nibble must be the EVEN element (index 0, 2, 4, ...)."""
-        from kimipy.ops import E2M1_VALUES
+        from chakra.ops import E2M1_VALUES
         # Byte 0x21: low=1 (0.5), high=2 (1.0)
         byte = 0x21
         lo = byte & 0x0F  # 1
@@ -50,7 +50,7 @@ class TestMXFP4Elementwise:
 
     def test_fused_matches_dequant_exact(self):
         """Fused and dequant paths must agree within float32 rounding."""
-        from kimipy.ops import matmul_mxfp4, matmul_mxfp4_fused
+        from chakra.ops import matmul_mxfp4, matmul_mxfp4_fused
 
         torch.manual_seed(0xDEAD)
         for in_f, out_f in [(64, 16), (128, 32), (256, 64)]:
@@ -72,7 +72,7 @@ class TestRMSNorm:
 
     def test_rmsnorm_formula(self):
         """RMSNorm must compute: x * rsqrt(mean(x^2) + eps) * weight."""
-        from kimipy.ops import rms_norm
+        from chakra.ops import rms_norm
 
         x = torch.tensor([1.0, 2.0, 3.0, 4.0])
         weight = torch.ones(4)
@@ -88,7 +88,7 @@ class TestRMSNorm:
 
     def test_rmsnorm_eps_inside_sqrt(self):
         """Epsilon must go inside the square root, not outside."""
-        from kimipy.ops import rms_norm
+        from chakra.ops import rms_norm
 
         x = torch.tensor([1e-8, 1e-8, 1e-8, 1e-8])
         weight = torch.ones(4)
@@ -103,7 +103,7 @@ class TestRMSNorm:
 
     def test_rmsnorm_double_accumulation(self):
         """RMSNorm must accumulate in double precision (like kimi-k3-in-c)."""
-        from kimipy.ops import rms_norm
+        from chakra.ops import rms_norm
 
         # Large values that would overflow float32 sum of squares
         x = torch.full((7168,), 1e4)
@@ -117,7 +117,7 @@ class TestSituGLU:
 
     def test_situ_glu_analytic_cap(self):
         """Output must never exceed beta1 * beta2 = 100."""
-        from kimipy.ops import situ_glu
+        from chakra.ops import situ_glu
 
         beta1, beta2 = 4.0, 25.0
         # Drive gate to large values
@@ -127,7 +127,7 @@ class TestSituGLU:
 
     def test_situ_glu_sigmoid_reads_uncapped(self):
         """The sigmoid must receive the UNCAPPED gate value."""
-        from kimipy.ops import situ_glu
+        from chakra.ops import situ_glu
 
         # Small gate value where tanh(g/b) ≈ g/b
         x = torch.tensor([[0.5, 0.3]])  # gate=0.5, up=0.3
@@ -144,7 +144,7 @@ class TestSituGLU:
 
     def test_situ_glu_near_zero(self):
         """Near zero, output should be approximately linear."""
-        from kimipy.ops import situ_glu
+        from chakra.ops import situ_glu
 
         x = torch.tensor([[0.001, 0.001]])
         result = situ_glu(x, beta=4.0, linear_beta=25.0)
@@ -156,7 +156,7 @@ class TestKDADecay:
 
     def test_kda_decay_range(self):
         """alpha must be in (e^lb, 1] where lb is gate_lower_bound."""
-        from kimipy.ops import kda_decay
+        from chakra.ops import kda_decay
 
         z = torch.randn(1, 4, 4, 32)
         dt_bias = torch.randn(4, 32)
@@ -170,7 +170,7 @@ class TestKDADecay:
 
     def test_kda_decay_per_head(self):
         """A_log must be indexed PER HEAD, not per channel."""
-        from kimipy.ops import kda_decay
+        from chakra.ops import kda_decay
 
         H, D = 4, 8
         z = torch.zeros(1, 1, H, D)

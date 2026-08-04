@@ -12,7 +12,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from kimipy.agent import KimiAgent, LocalModelRunner
+from chakra.agent import KimiAgent, LocalModelRunner
 
 
 class TestLocalModelRunner:
@@ -161,19 +161,19 @@ class TestCLIOptionB:
 
     def test_cli_imports(self):
         """CLI should import LocalModelRunner."""
-        from kimipy.cli import LOCAL_MODEL_DIR, ensure_local_model
+        from chakra.cli import LOCAL_MODEL_DIR, ensure_local_model
         assert LOCAL_MODEL_DIR == Path("models/chakra_local")
         assert callable(ensure_local_model)
 
     def test_cli_local_model_dir_constant(self):
         """LOCAL_MODEL_DIR should point to correct path."""
-        from kimipy.cli import LOCAL_MODEL_DIR
+        from chakra.cli import LOCAL_MODEL_DIR
         assert LOCAL_MODEL_DIR == Path("models") / "chakra_local"
 
-    @patch("kimipy.cli.ensure_local_model")
+    @patch("chakra.cli.ensure_local_model")
     def test_cli_auto_download_called(self, mock_ensure):
         """ensure_local_model should be callable."""
-        from kimipy.cli import ensure_local_model
+        from chakra.cli import ensure_local_model
         mock_ensure.return_value = True
         result = ensure_local_model()
         assert result is True
@@ -181,11 +181,11 @@ class TestCLIOptionB:
     def test_cli_arg_parser_has_local_model_flag(self):
         """CLI arg parser should have --local-model flag."""
         import argparse
-        from kimipy.cli import main
+        from chakra.cli import main
         # We test that main can parse --local-model without error
         # by checking the parser setup doesn't crash
         try:
-            from kimipy.cli import main
+            from chakra.cli import main
             # Just verifying the import and function exist
             assert callable(main)
         except Exception:

@@ -1,5 +1,5 @@
 """
-Unit tests for advanced features in kimipy:
+Unit tests for advanced features in chakra:
 WorkspaceIndexer, SessionManager, InfoSecAuditor, PersonaManager, and diff/runner functions.
 """
 
@@ -9,7 +9,7 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from kimipy import (
+from chakra import (
     InfoSecAuditor,
     PersonaManager,
     SessionManager,

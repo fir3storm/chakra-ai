@@ -1,5 +1,5 @@
 """
-Unit tests for KimiAgent in kimipy.agent.
+Unit tests for KimiAgent in chakra.agent.
 """
 
 import os
@@ -8,7 +8,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from kimipy.agent import KimiAgent
+from chakra.agent import KimiAgent
 
 
 class TestKimiAgent(unittest.TestCase):

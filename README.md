@@ -76,7 +76,7 @@ pip install -e .
 start_chakra_ai.bat
 
 # Launch (any OS)
-python -m kimipy.cli
+python -m chakra.cli
 ```
 
 ---
@@ -135,7 +135,7 @@ Chakra AI includes `InfoSecAuditor` with 10+ OWASP security rules:
 - Unsafe deserialization (pickle, yaml.unsafe_load)
 
 ```bash
-(fullstack) > /audit kimipy/agent.py
+(fullstack) > /audit chakra/agent.py
 (fullstack) > /scan-vuln
 ```
 
@@ -179,7 +179,7 @@ Results are cached in `.chakra_benchmark.json` and used automatically.
 ## CLI Flags
 
 ```
-python -m kimipy.cli [OPTIONS]
+python -m chakra.cli [OPTIONS]
 
 Options:
   --preset {laptop,desktop,workstation,server}  Hardware preset (default: laptop)
@@ -220,7 +220,7 @@ python -m pytest tests/test_agent.py -v           # Agent & sandbox
 
 ```
 chakra-ai/
-├── kimipy/                    # Core engine package
+├── chakra/                    # Core engine package
 │   ├── agent.py               # Agent, sandbox, self-debugging loop
 │   ├── cli.py                 # REPL terminal & commands
 │   ├── engine_c_backend.py    # kimi-k3-in-c subprocess wrapper

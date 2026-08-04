@@ -13,7 +13,7 @@ echo.
 echo  Commands: /help /status /team /persona /audit /scan-vuln /context /tree
 echo =======================================================================
 echo.
-python -m kimipy.cli --preset laptop
+python -m chakra.cli --preset laptop
 echo.
 echo =======================================================================
 echo Session ended. Press any key to exit.

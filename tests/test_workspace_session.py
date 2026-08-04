@@ -1,5 +1,5 @@
 """
-Unit tests for kimipy WorkspaceIndexer and SessionManager.
+Unit tests for chakra WorkspaceIndexer and SessionManager.
 """
 
 import json
@@ -7,7 +7,7 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from kimipy import SessionManager, WorkspaceIndexer
+from chakra import SessionManager, WorkspaceIndexer
 
 
 class TestWorkspaceIndexer(unittest.TestCase):

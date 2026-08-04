@@ -1,6 +1,6 @@
 # tests/unit/test_cli_ui.py
 """
-Unit tests for kimipy.ui helpers and kimipy.cli REPL redesign.
+Unit tests for chakra.ui helpers and chakra.cli REPL redesign.
 """
 import io
 import sys
@@ -12,8 +12,8 @@ root_dir = Path(__file__).parent.parent.parent
 if str(root_dir) not in sys.path:
     sys.path.insert(0, str(root_dir))
 
-from kimipy.ui import clear_screen, print_banner, print_code_box, print_step
-from kimipy.cli import run_repl
+from chakra.ui import clear_screen, print_banner, print_code_box, print_step
+from chakra.cli import run_repl
 
 
 class TestKimipyUI(unittest.TestCase):

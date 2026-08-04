@@ -1,5 +1,5 @@
 """
-Unit tests for KimiTokenizer and KimiAgent in kimipy package.
+Unit tests for KimiTokenizer and KimiAgent in chakra package.
 
 Covers:
 - KimiTokenizer text decoding (Python lists, NumPy arrays, PyTorch tensors, special tokens)
@@ -12,8 +12,8 @@ import unittest
 import numpy as np
 import torch
 
-from kimipy.tokenizer import KimiTokenizer
-from kimipy.agent import KimiAgent
+from chakra.tokenizer import KimiTokenizer
+from chakra.agent import KimiAgent
 
 
 class TestKimiTokenizerDecoding(unittest.TestCase):

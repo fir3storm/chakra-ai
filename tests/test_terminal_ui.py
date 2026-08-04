@@ -1,5 +1,5 @@
 """
-Unit test suite for kimipy terminal UI components and REPL prompt handling.
+Unit test suite for chakra terminal UI components and REPL prompt handling.
 """
 
 from io import StringIO
@@ -10,15 +10,15 @@ from unittest.mock import MagicMock, patch
 
 import torch
 
-from kimipy.agent import KimiAgent
-from kimipy.cli import run_repl
-from kimipy.model import K3Model, tiny_config
-from kimipy.tokenizer import KimiTokenizer
-from kimipy import ui
+from chakra.agent import KimiAgent
+from chakra.cli import run_repl
+from chakra.model import K3Model, tiny_config
+from chakra.tokenizer import KimiTokenizer
+from chakra import ui
 
 
 class TestTerminalUI(unittest.TestCase):
-    """Test suite for kimipy.ui module functions and formatting."""
+    """Test suite for chakra.ui module functions and formatting."""
 
     def test_code_box_drawing(self) -> None:
         captured_output = StringIO()

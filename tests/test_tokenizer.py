@@ -1,5 +1,5 @@
 """
-Unit tests for kimipy.tokenizer module (KimiTokenizer).
+Unit tests for chakra.tokenizer module (KimiTokenizer).
 
 Tests offline Tiktoken BPE loading, UTF-8 byte fallback mode, text/code roundtrips,
 and chat template formatting.
@@ -13,7 +13,7 @@ import unittest
 
 import torch
 
-from kimipy.tokenizer import KimiTokenizer, find_tokenizer_files
+from chakra.tokenizer import KimiTokenizer, find_tokenizer_files
 
 
 class TestKimiTokenizerFallback(unittest.TestCase):

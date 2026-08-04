@@ -13,8 +13,8 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from kimipy.agent import KimiAgent
-from kimipy.multi_agent import (
+from chakra.agent import KimiAgent
+from chakra.multi_agent import (
     ArchitectAgent,
     AuditorAgent,
     CoderAgent,
@@ -185,13 +185,13 @@ class TestEngineCBackend:
 
     def test_backend_init(self):
         """Backend must initialize without crashing."""
-        from kimipy.engine_c_backend import KimiCBackend
+        from chakra.engine_c_backend import KimiCBackend
         backend = KimiCBackend(binary_path="/nonexistent/k3")
         assert backend is not None
 
     def test_health_check_no_binary(self):
         """Health check must report missing binary."""
-        from kimipy.engine_c_backend import KimiCBackend
+        from chakra.engine_c_backend import KimiCBackend
         backend = KimiCBackend(binary_path="/nonexistent/k3")
         health = backend.check_health()
         assert health["ready"] is False
@@ -199,14 +199,14 @@ class TestEngineCBackend:
 
     def test_generate_no_binary_raises(self):
         """Generate must raise RuntimeError when binary is missing."""
-        from kimipy.engine_c_backend import KimiCBackend
+        from chakra.engine_c_backend import KimiCBackend
         backend = KimiCBackend(binary_path="/nonexistent/k3")
         with pytest.raises(RuntimeError, match="not found"):
             backend.generate("hello", gen_tokens=8)
 
     def test_find_k3_binary(self):
         """find_k3_binary must return None or a valid path."""
-        from kimipy.engine_c_backend import find_k3_binary
+        from chakra.engine_c_backend import find_k3_binary
         result = find_k3_binary()
         # Should be None (not built) or a valid path
         if result is not None:
@@ -214,7 +214,7 @@ class TestEngineCBackend:
 
     def test_parse_output(self):
         """Output parser must extract generated text from k3 format."""
-        from kimipy.engine_c_backend import KimiCBackend
+        from chakra.engine_c_backend import KimiCBackend
         backend = KimiCBackend(binary_path="/nonexistent/k3")
         mock_output = """--- generated text ---
 Paris.", "The Eiffel
@@ -227,7 +227,7 @@ PEAK RSS for the whole run: 8.24 GB"""
 
     def test_parse_memory_report(self):
         """Memory report parser must extract peak RSS."""
-        from kimipy.engine_c_backend import KimiCBackend
+        from chakra.engine_c_backend import KimiCBackend
         backend = KimiCBackend(binary_path="/nonexistent/k3")
         mock_output = "PEAK RSS for the whole run: 8.24 GB"
         backend._parse_memory_report(mock_output)
@@ -240,12 +240,12 @@ class TestCLIConsolidation:
 
     def test_cli_imports_session_manager(self):
         """CLI must import SessionManager."""
-        from kimipy.cli import SESSIONS_DIR
+        from chakra.cli import SESSIONS_DIR
         assert SESSIONS_DIR is not None
 
     def test_cli_imports_persona_manager(self):
         """CLI must import PersonaManager."""
-        from kimipy.persona import PersonaManager
+        from chakra.persona import PersonaManager
         pm = PersonaManager()
         personas = pm.list_personas()
         assert "fullstack" in personas
@@ -253,7 +253,7 @@ class TestCLIConsolidation:
 
     def test_session_manager_save_load(self):
         """SessionManager must save and load sessions."""
-        from kimipy.session import SessionManager
+        from chakra.session import SessionManager
         with tempfile.TemporaryDirectory() as tmpdir:
             mgr = SessionManager(storage_dir=tmpdir)
             sid = mgr.save_session(
@@ -269,7 +269,7 @@ class TestCLIConsolidation:
 
     def test_persona_manager_switch(self):
         """PersonaManager must switch personas."""
-        from kimipy.persona import PersonaManager
+        from chakra.persona import PersonaManager
         pm = PersonaManager(initial_persona="fullstack")
         assert pm._active_role == "fullstack"
         pm.set_persona("infosec")
