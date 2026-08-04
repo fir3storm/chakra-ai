@@ -1,0 +1,12 @@
+{
+  "session_id": "sess_61598",
+  "created_at": "2026-08-04T22:09:58.382998",
+  "updated_at": "2026-08-04T22:09:58.383996",
+  "history": "<MagicMock name='mock.chat_history' id='2211088520384'>",
+  "artifacts": [],
+  "trace_logs": [],
+  "metadata": {
+    "persona": "fullstack",
+    "last_code": "<MagicMock name='mock.last_code' id='2211089572608'>"
+  }
+}
