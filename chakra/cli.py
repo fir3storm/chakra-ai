@@ -986,8 +986,8 @@ def main(args: Optional[List[str]] = None) -> int:
     parser.add_argument(
         "--gen",
         type=int,
-        default=512,
-        help="Number of tokens to generate (default: 512)",
+        default=None,
+        help="Number of tokens to generate (default: from benchmark, or 512)",
     )
     parser.add_argument(
         "--incremental",
@@ -1044,6 +1044,11 @@ def main(args: Optional[List[str]] = None) -> int:
     )
 
     parsed = parser.parse_args(args)
+
+    # Auto-detect optimal gen_tokens from benchmark if not explicitly set
+    if parsed.gen is None:
+        from tools.benchmark import get_optimal_gen_tokens
+        parsed.gen = get_optimal_gen_tokens(default=512)
 
     preset_info = PRESETS[parsed.preset]
     cache_gb = parsed.cache_gb if parsed.cache_gb is not None else preset_info["cache_gb"]
