@@ -700,7 +700,11 @@ def run_repl(
                 print_tool("error", f"Failed: {err}")
         else:
             # Chat mode with streaming when available
-            if isinstance(model, LocalModelRunner) and model.loaded:
+            has_stream = (
+                (isinstance(model, LocalModelRunner) and model.loaded) or
+                (isinstance(model, LlamaCppBackend) and model.loaded)
+            )
+            if has_stream:
                 with Spinner("Thinking...") as sp:
                     full_response = []
                     for chunk in model.generate_stream(full_prompt, n_new=gen_tokens):
@@ -745,8 +749,8 @@ def main(args: Optional[List[str]] = None) -> int:
     parser.add_argument(
         "--gen",
         type=int,
-        default=192,
-        help="Number of tokens to generate (default: 192)",
+        default=512,
+        help="Number of tokens to generate (default: 512)",
     )
     parser.add_argument(
         "--incremental",

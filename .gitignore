@@ -64,3 +64,4 @@ models/
 !tests/fixtures/
 !tests/fixtures/**
 ".chakra_sessions/"  
+".chakra_sessions/"  
