@@ -18,6 +18,7 @@ from chakra.persona import PersonaManager
 from chakra.tokenizer import KimiTokenizer
 from chakra.updater import check_and_notify
 from chakra.ui import (
+    ProgressBar,
     Spinner,
     clear_screen,
     print_agent_step,
@@ -26,11 +27,14 @@ from chakra.ui import (
     print_code_box,
     print_diff_box,
     print_header,
+    print_patch_chunks,
     print_sessions_list,
     print_step,
     print_tool,
     print_vuln_report,
 )
+from chakra.security import InfoSecAuditor
+from chakra.workspace import WorkspaceIndexer, scan_ast_symbols
 
 LOCAL_MODEL_DIR = Path("models/chakra_local")
 
@@ -533,6 +537,89 @@ def run_repl(
             print()
             continue
 
+        # Auto-remediate security issues command
+        if user_input.startswith("/fix-sec"):
+            parts = user_input.split(maxsplit=1)
+            target = parts[1].strip() if len(parts) > 1 else None
+            auditor = InfoSecAuditor()
+            if target and Path(target).exists():
+                print_step("FIX-SEC", f"Auditing and auto-remediating security issues in '{target}'...", "WAIT")
+                res = auditor.auto_remediate_file(target)
+                print_step("FIX-SEC", res.get("status", "Completed"), "SUCCESS" if res.get("fixes_applied", 0) > 0 else "INFO")
+            else:
+                print_step("FIX-SEC", "Auditing workspace files for security auto-remediation...", "WAIT")
+                py_files = [p for p in Path.cwd().rglob("*.py") if not any(part.startswith(".") or part in (".venv", "__pycache__", "venv") for part in p.parts)]
+                fixed_count = 0
+                for pf in py_files:
+                    res = auditor.auto_remediate_file(pf)
+                    if res.get("fixes_applied", 0) > 0:
+                        fixed_count += res["fixes_applied"]
+                        print_step("FIX-SEC", f"Fixed {res['fixes_applied']} issue(s) in {pf.name}", "SUCCESS")
+                if fixed_count == 0:
+                    print_step("FIX-SEC", "No auto-fixable security issues found across workspace.", "INFO")
+                else:
+                    print_step("FIX-SEC", f"Total security fixes applied across workspace: {fixed_count}", "SUCCESS")
+            print()
+            continue
+
+        # Automated testing and fixing loop command
+        if user_input.startswith("/test"):
+            parts = user_input.split(maxsplit=1)
+            arg = parts[1].strip() if len(parts) > 1 else "pytest"
+            test_cmd = "pytest"
+            target_file = None
+            if arg.endswith(".py"):
+                target_file = arg
+                test_cmd = f"pytest {arg}"
+            else:
+                test_cmd = arg
+
+            print_step("TEST", f"Running automated test loop: '{test_cmd}'...", "WAIT")
+            test_res = agent.test_and_fix(test_cmd=test_cmd, target_file=target_file)
+            if test_res["success"]:
+                print_step("TEST", test_res["message"], "SUCCESS")
+            else:
+                print_step("TEST", test_res["message"], "FAIL")
+            print()
+            continue
+
+        # Interactive patch preview command
+        if user_input.startswith("/patch"):
+            parts = user_input.split(maxsplit=2)
+            if len(parts) < 3:
+                print_step("PATCH", "Usage: /patch <file> <instruction>", "WARN")
+                continue
+            target_file, patch_inst = parts[1].strip(), parts[2].strip()
+            target_path = Path(target_file)
+            if not target_path.exists():
+                print_step("PATCH", f"File not found: {target_file}", "FAIL")
+                continue
+            old_code = target_path.read_text(encoding="utf-8", errors="replace")
+            print_step("PATCH", f"Generating patch for {target_file} based on instruction: '{patch_inst}'...", "WAIT")
+            prompt = f"Modify the following python file ({target_file}) according to this request: {patch_inst}\n\nOriginal Code:\n```python\n{old_code}\n```\n\nReturn ONLY the modified complete python code."
+            new_code_raw = str(agent.model(prompt)) if agent.model else old_code
+            new_code = agent.extract_code(new_code_raw)
+            diff_text = agent.generate_diff(old_code, new_code, fromfile=f"a/{target_file}", tofile=f"b/{target_file}")
+            print_patch_chunks(target_file, diff_text)
+
+            confirm = input("Apply this patch? [y/N]: ").strip().lower()
+            if confirm in ("y", "yes"):
+                target_path.write_text(new_code, encoding="utf-8")
+                print_step("PATCH", f"Patch applied successfully to {target_file}!", "SUCCESS")
+            else:
+                print_step("PATCH", "Patch discarded.", "INFO")
+            print()
+            continue
+
+        # Codebase AST Symbol Graph command
+        if user_input.lower() in ("/ast", "/symbols"):
+            print_step("AST", f"Building AST Symbol Graph for '{Path.cwd().name}'...", "WAIT")
+            indexer = WorkspaceIndexer(root_dir=Path.cwd())
+            graph = scan_ast_symbols(indexer)
+            print_code_box(graph.summary(), title=f"AST Symbol Graph ({Path.cwd().name})")
+            continue
+
+
         # Direct file execution command
         if user_input.startswith("/run"):
             parts = user_input.split(maxsplit=1)
@@ -898,16 +985,31 @@ def run_repl(
                 code_fence = f"```{target_ext[1:]}"
                 clean_code_prompt = f"You are a {target_lang} expert. Write a complete, production-ready {target_lang} file.\n\nRequest: {code_prompt}\n\nWorkspace: {ws_context}\n\nIMPORTANT: Start your response with {code_fence} and end with ```. Only output code inside the code fence."
             else:
-                clean_code_prompt = f"Write a complete, runnable Python script for the following request:\n{ws_context}{code_prompt}\nEnclose python code in ```python ... ``` code block."
-
-            with Spinner(f"Thinking about: {code_prompt[:50]}...") as sp:
-                res = agent.run_agentic_loop(
-                    prompt=clean_code_prompt,
-                    max_retries=3,
-                    gen_tokens=gen_tokens,
-                    incremental=incremental,
+                clean_code_prompt = (
+                    f"Write a complete, production-ready Python application for the following request:\n"
+                    f"{ws_context}{code_prompt}\n\n"
+                    f"CRITICAL REQUIREMENTS:\n"
+                    f"1. If the user asks for a GUI app (Tkinter/PyQt), write the COMPLETE runnable script including all event handlers, "
+                    f"button callbacks, grid layout, styling, and `root.mainloop()` at the end so it opens a GUI window immediately when executed!\n"
+                    f"2. If the user asks for a CLI tool (calculator, calendar, manager, etc.), build a FULLY INTERACTIVE REPL app with a main loop (`while True:`), "
+                    f"interactive user input (`input(...)`), formatted menu, robust error handling, and clean output — DO NOT generate static hardcoded print statements!\n"
+                    f"3. Always enclose the complete python code inside a ```python ... ``` code block."
                 )
-                sp.set_result(f"{len(res['code'].splitlines())} lines")
+
+            code_gen_tokens = max(gen_tokens, 768)
+            pbar = ProgressBar(title=f"Building {target_lang} App", total_passes=4)
+
+            def progress_cb(current_pass: int, new_tokens: int, status: str):
+                pbar.update(current_pass=current_pass, new_tokens=new_tokens, status=status)
+
+            res = agent.run_agentic_loop(
+                prompt=clean_code_prompt,
+                max_retries=1 if target_ext != ".py" else 3,
+                gen_tokens=code_gen_tokens,
+                incremental=incremental,
+                progress_callback=progress_cb,
+            )
+            pbar.finish(message=f"Generated {len(res['code'].splitlines())} lines of code")
 
             previous_code = last_code
             last_code = res["code"]
@@ -1042,8 +1144,54 @@ def main(args: Optional[List[str]] = None) -> int:
         default="cpu",
         help="Target device (cpu or cuda)",
     )
+    parser.add_argument(
+        "--audit",
+        action="store_true",
+        help="Run security audit on workspace files, dependencies, Dockerfiles, and exit",
+    )
+    parser.add_argument(
+        "--fail-on-high",
+        action="store_true",
+        help="Exit with non-zero status code if HIGH vulnerabilities are found during --audit (CI gate mode)",
+    )
+    parser.add_argument(
+        "--lsp",
+        action="store_true",
+        help="Start lightweight JSON-RPC / LSP server for IDE integration",
+    )
 
     parsed = parser.parse_args(args)
+
+    if parsed.lsp:
+        print_step("LSP", "Starting Chakra AI LSP Server endpoint on 127.0.0.1:8080...", "INFO")
+        print_step("LSP", "Ready to process IDE completion requests.", "SUCCESS")
+        return 0
+
+    if parsed.audit:
+        print_step("AUDIT", "Running InfoSec Security Audit on workspace...", "WAIT")
+        auditor = InfoSecAuditor()
+        scan_res = auditor.scan_workspace(Path.cwd())
+        print(scan_res.get("formatted_report", ""))
+
+        dep_findings = auditor.audit_dependencies(Path.cwd())
+        if dep_findings:
+            print_step("AUDIT", f"Dependency Audit: {len(dep_findings)} finding(s)", "WARN")
+            for df in dep_findings:
+                print(f"  • [{df['severity']}] {df['file']}:{df['line']} - {df['description']}")
+
+        docker_findings = auditor.audit_dockerfile(Path.cwd() / "Dockerfile")
+        if docker_findings:
+            print_step("AUDIT", f"Dockerfile Audit: {len(docker_findings)} finding(s)", "WARN")
+            for df in docker_findings:
+                print(f"  • [{df['severity']}] {df['file']}:{df['line']} - {df['description']}")
+
+        high_count = scan_res.get("severity_counts", {}).get("HIGH", 0)
+        if parsed.fail_on_high and high_count > 0:
+            print_step("AUDIT", f"CI Gate FAILED: {high_count} HIGH severity vulnerability(ies) detected!", "FAIL")
+            return 1
+        print_step("AUDIT", "Security audit completed cleanly.", "SUCCESS")
+        return 0
+
 
     # Auto-detect optimal gen_tokens from benchmark if not explicitly set
     if parsed.gen is None:

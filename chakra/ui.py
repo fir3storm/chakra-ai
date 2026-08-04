@@ -445,3 +445,69 @@ def print_sessions_list(sessions: List[Dict[str, str]], active_session_id: Optio
             _safe_print(f"{c.BRIGHT_BLACK}│{c.RESET} {is_active} {c.BRIGHT_YELLOW}{sid:<8}{c.RESET} | {status_tag} | {ts:<16} | {msgs:>2} msgs | {c.WHITE}{title}{c.RESET}")
     _safe_print(f"{c.BRIGHT_CYAN}{c.BOLD}└─────────────────────────────────────────────────────────────────────────┘{c.RESET}\n")
 
+
+def print_patch_chunks(filepath: str, diff_text: str) -> None:
+    """
+    Render formatted interactive code patch diff chunks in terminal.
+
+    Args:
+        filepath: Target file being patched.
+        diff_text: Unified diff text string.
+    """
+    c = Colors
+    _safe_print(f"\n{c.BRIGHT_CYAN}{c.BOLD}┌── ✏️ Interactive Code Patch Chunk Preview: {filepath} ──┐{c.RESET}")
+    lines = diff_text.splitlines()
+    for line in lines:
+        if line.startswith("+++") or line.startswith("---"):
+            _safe_print(f"{c.BRIGHT_BLACK}{line}{c.RESET}")
+        elif line.startswith("@@"):
+            _safe_print(f"{c.BRIGHT_YELLOW}{c.BOLD}{line}{c.RESET}")
+        elif line.startswith("+"):
+            _safe_print(f"{c.BRIGHT_GREEN}{line}{c.RESET}")
+        elif line.startswith("-"):
+            _safe_print(f"{c.BRIGHT_RED}{line}{c.RESET}")
+        else:
+            _safe_print(f"{c.WHITE}{line}{c.RESET}")
+    _safe_print(f"{c.BRIGHT_CYAN}{c.BOLD}└─────────────────────────────────────────────────────────────────────────┘{c.RESET}\n")
+
+
+class ProgressBar:
+    """
+    Renders an animated live progress bar for long-running token generation and multi-pass code tasks.
+    """
+
+    def __init__(self, title: str = "Generating Code", total_passes: int = 5) -> None:
+        self.title = title
+        self.total_passes = total_passes
+        self.current_pass = 0
+        self.total_tokens = 0
+        self.start_time = time.time()
+
+    def update(self, current_pass: int, new_tokens: int = 0, status: str = "") -> None:
+        self.current_pass = current_pass
+        self.total_tokens += new_tokens
+        elapsed = max(0.1, time.time() - self.start_time)
+        tok_s = round(self.total_tokens / elapsed, 1)
+
+        pct = min(100, int((self.current_pass / self.total_passes) * 100))
+        filled = int(pct / 5)
+        bar = "█" * filled + "░" * (20 - filled)
+        c = Colors
+        sys.stdout.write(
+            f"\r{c.BRIGHT_CYAN}{c.BOLD}[{self.title}]{c.RESET} [{c.BRIGHT_GREEN}{bar}{c.RESET}] {pct}% | "
+            f"Pass {self.current_pass}/{self.total_passes} | Tokens: {c.BRIGHT_YELLOW}{self.total_tokens}{c.RESET} ({tok_s} t/s) {status:<15}"
+        )
+        sys.stdout.flush()
+
+    def finish(self, message: str = "Complete!") -> None:
+        c = Colors
+        elapsed = max(0.1, time.time() - self.start_time)
+        tok_s = round(self.total_tokens / elapsed, 1)
+        sys.stdout.write(
+            f"\r{c.BRIGHT_GREEN}{c.BOLD}✔ {self.title}{c.RESET} [{c.BRIGHT_GREEN}{'█'*20}{c.RESET}] 100% | "
+            f"Total: {self.total_tokens} tokens ({tok_s} t/s) — {message}\n"
+        )
+        sys.stdout.flush()
+
+
+

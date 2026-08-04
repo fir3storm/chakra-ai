@@ -107,10 +107,14 @@ curl -fsSL https://raw.githubusercontent.com/fir3storm/chakra-ai/main/setup.sh |
 | `<prompt>` | Code generation + sandbox execution + self-debug |
 | `/plan <task>` | Multi-step task breakdown & execution |
 | `/edit <file> <cmd>` | AI-powered file editing with diff preview |
+| `/patch <file> <inst>` | Interactive patch chunk generator & preview |
+| `/test [cmd]` | Automated test execution & self-fixing loop |
 | `/team <prompt>` | Multi-agent collaboration |
 | `/persona [role]` | Switch persona |
 | `/audit <file>` | OWASP security audit |
 | `/scan-vuln` | Scan all Python files |
+| `/fix-sec [file]` | Auto-remediate OWASP security vulnerabilities |
+| `/ast` / `/symbols` | Codebase AST Symbol Graph indexer |
 | `/git [cmd]` | Run git commands from REPL |
 | `/memory [text]` | Save/load project context |
 | `/context` / `/tree` | Workspace overview |

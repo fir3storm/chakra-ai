@@ -148,7 +148,7 @@ class TestKimiAgentSelfDebuggingLoop(unittest.TestCase):
     """Test suite for KimiAgent self-debugging feedback loop."""
 
     def test_self_debugging_loop_success_first_try(self) -> None:
-        agent = KimiAgent()
+        agent = KimiAgent(model=lambda p: f"```python\n{p}\n```")
         # Mock run_agentic_loop default fallback
         res = agent.run_agentic_loop("print('Success first try')", max_retries=3)
         self.assertTrue(res["success"])

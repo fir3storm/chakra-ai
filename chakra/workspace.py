@@ -46,19 +46,29 @@ class WorkspaceIndexer:
         )
         self.index: Dict[str, Any] = {}
         self.scanned: bool = False
+        self._last_scan_mtime: float = 0.0
+
+    def is_cache_valid() -> bool:
+        return False
 
     def scan_workspace(
         self,
         root_dir: Optional[Union[str, Path]] = None,
         extensions: Optional[Union[List[str], Tuple[str, ...]]] = None,
+        force: bool = False,
     ) -> Dict[str, Any]:
         """
-        Scans the current project directory for source files, extracts structural metadata
-        (function signatures, AST definitions, file stats, documentation headers),
-        and returns an in-memory context index.
+        Scans the current project directory for source files, extracts structural metadata,
+        using mtime lazy caching to avoid redundant file I/O walks.
         """
         if root_dir is not None:
             self.root_dir = Path(root_dir).resolve()
+
+        # Check mtime cache if not forced
+        if not force and self.scanned and self.root_dir.exists():
+            current_mtime = self.root_dir.stat().st_mtime
+            if current_mtime <= self._last_scan_mtime:
+                return self.index
 
         if extensions is not None:
             self.extensions = tuple(
@@ -117,6 +127,7 @@ class WorkspaceIndexer:
             "tree": dir_tree,
         }
         self.scanned = True
+        self._last_scan_mtime = self.root_dir.stat().st_mtime if self.root_dir.exists() else 0.0
         return self.index
 
     def get_tree(self, max_depth: int = 5) -> str:
@@ -346,3 +357,75 @@ class WorkspaceIndexer:
         except Exception:
             pass
         return {"tables_or_views": tables}
+
+class SymbolGraph:
+    """
+    In-memory representation of AST symbols across a workspace.
+    Indexes classes, functions, docstrings, imports, and cross-file relationships.
+    """
+
+    def __init__(self) -> None:
+        self.files: Dict[str, Dict[str, Any]] = {}
+        self.symbols: Dict[str, List[Dict[str, Any]]] = {}  # symbol_name -> locations
+
+    def add_file_symbols(self, rel_path: str, symbols_data: Dict[str, Any]) -> None:
+        self.files[rel_path] = symbols_data
+        for func in symbols_data.get("functions", []):
+            if isinstance(func, dict):
+                name = func.get("name", "")
+                sig = func.get("signature", name)
+            else:
+                sig = str(func)
+                name = sig.split("(")[0].replace("def ", "").replace("async ", "").strip()
+            if name:
+                if name not in self.symbols:
+                    self.symbols[name] = []
+                self.symbols[name].append({"file": rel_path, "type": "function", "signature": sig})
+
+        for cls in symbols_data.get("classes", []):
+            if isinstance(cls, dict):
+                cls_name = cls.get("name", "")
+                methods = cls.get("methods", [])
+            else:
+                cls_name = str(cls)
+                methods = []
+            if cls_name:
+                if cls_name not in self.symbols:
+                    self.symbols[cls_name] = []
+                self.symbols[cls_name].append({"file": rel_path, "type": "class", "methods": methods})
+
+    def summary(self) -> str:
+        lines: List[str] = ["# Codebase AST Symbol Graph"]
+        lines.append(f"Indexed Files: {len(self.files)} | Total Unique Symbols: {len(self.symbols)}")
+        lines.append("-" * 60)
+        for rel_path, data in self.files.items():
+            lines.append(f"📄 {rel_path}")
+            for fn in data.get("functions", []):
+                sig = fn.get("signature", fn.get("name", "")) if isinstance(fn, dict) else str(fn)
+                lines.append(f"   ⚡ {sig}")
+            for cls in data.get("classes", []):
+                cname = cls.get("name", "") if isinstance(cls, dict) else str(cls)
+                lines.append(f"   🏛️ class {cname}")
+                methods = cls.get("methods", []) if isinstance(cls, dict) else []
+                for m in methods:
+                    msig = m.get("signature", m.get("name", "")) if isinstance(m, dict) else str(m)
+                    lines.append(f"      • {msig}")
+        return "\n".join(lines)
+
+
+
+# Add helper to WorkspaceIndexer
+def scan_ast_symbols(indexer: WorkspaceIndexer) -> SymbolGraph:
+    """
+    Builds a full SymbolGraph from the scanned workspace index.
+    """
+    if not indexer.scanned:
+        indexer.scan_workspace()
+
+    graph = SymbolGraph()
+    files_dict = indexer.index.get("files", {})
+    for rel_path, f_info in files_dict.items():
+        if "python_ast" in f_info:
+            graph.add_file_symbols(rel_path, f_info["python_ast"])
+    return graph
+

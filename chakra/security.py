@@ -544,3 +544,222 @@ class InfoSecAuditor:
             status = "FAILED"
 
         return grade, status
+
+    def audit_dependencies(self, project_dir: Union[str, Path] = ".") -> List[Dict[str, Any]]:
+        """
+        Audits project dependency files (requirements.txt, pyproject.toml, package.json)
+        for insecure patterns, unpinned dependencies, or dangerous packages.
+        """
+        root = Path(project_dir).resolve()
+        findings: List[Dict[str, Any]] = []
+
+        # 1. requirements.txt
+        req_file = root / "requirements.txt"
+        if req_file.exists():
+            try:
+                content = req_file.read_text(encoding="utf-8")
+                for line_no, line in enumerate(content.splitlines(), 1):
+                    line_strip = line.strip()
+                    if line_strip and not line_strip.startswith("#"):
+                        if "==" not in line_strip and ">=" not in line_strip and "~=" not in line_strip:
+                            findings.append({
+                                "file": "requirements.txt",
+                                "line": line_no,
+                                "type": "Unpinned Dependency",
+                                "severity": "MEDIUM",
+                                "description": f"Dependency '{line_strip}' is unpinned. May result in non-deterministic builds.",
+                                "recommendation": f"Pin exact version with '{line_strip}==x.y.z'",
+                            })
+                        if any(pkg in line_strip.lower() for pkg in ["pickle", "pycrypto", "telnetlib"]):
+                            findings.append({
+                                "file": "requirements.txt",
+                                "line": line_no,
+                                "type": "Vulnerable Package",
+                                "severity": "HIGH",
+                                "description": f"Package in '{line_strip}' is deprecated or insecure.",
+                                "recommendation": "Replace with secure alternative (e.g. pycryptodome, paramiko).",
+                            })
+            except Exception as e:
+                findings.append({"file": "requirements.txt", "line": 0, "type": "Read Error", "severity": "LOW", "description": str(e), "recommendation": "Check permissions"})
+
+        # 2. package.json
+        pkg_json = root / "package.json"
+        if pkg_json.exists():
+            try:
+                import json
+                data = json.loads(pkg_json.read_text(encoding="utf-8"))
+                deps = {**data.get("dependencies", {}), **data.get("devDependencies", {})}
+                for pkg, ver in deps.items():
+                    if ver.startswith("*") or ver.startswith("^") or ver.startswith(">"):
+                        findings.append({
+                            "file": "package.json",
+                            "line": 1,
+                            "type": "Flexible Dependency Version",
+                            "severity": "LOW",
+                            "description": f"Dependency '{pkg}' uses wildcard/range '{ver}'.",
+                            "recommendation": "Pin exact dependency version or use package-lock.json.",
+                        })
+            except Exception:
+                pass
+
+        return findings
+
+    def audit_dockerfile(self, dockerfile_path: Union[str, Path] = "Dockerfile") -> List[Dict[str, Any]]:
+        """
+        Audits Dockerfile for security bad practices (root user, latest tag, exposed secrets, curl|sh).
+        """
+        path = Path(dockerfile_path).resolve()
+        if not path.exists():
+            return []
+
+        findings: List[Dict[str, Any]] = []
+        try:
+            lines = path.read_text(encoding="utf-8").splitlines()
+            has_user = False
+            for idx, line in enumerate(lines, 1):
+                line_str = line.strip()
+                if line_str.startswith("USER ") and "root" not in line_str.lower():
+                    has_user = True
+                if line_str.startswith("FROM ") and ":latest" in line_str:
+                    findings.append({
+                        "file": path.name,
+                        "line": idx,
+                        "type": "Unspecified Base Image Version",
+                        "severity": "MEDIUM",
+                        "description": "Dockerfile uses ':latest' tag for base image.",
+                        "recommendation": "Use specific version tag (e.g., python:3.11-slim) for deterministic builds.",
+                    })
+                if "curl" in line_str and "|" in line_str and ("sh" in line_str or "bash" in line_str):
+                    findings.append({
+                        "file": path.name,
+                        "line": idx,
+                        "type": "Piped Shell Execution",
+                        "severity": "HIGH",
+                        "description": "Piping curl/wget output directly into bash/sh.",
+                        "recommendation": "Download script first, inspect/checksum, then execute.",
+                    })
+                if any(env_key in line_str for env_key in ["ENV API_KEY", "ENV SECRET", "ENV PASSWORD"]):
+                    findings.append({
+                        "file": path.name,
+                        "line": idx,
+                        "type": "Secret in Dockerfile",
+                        "severity": "HIGH",
+                        "description": "Hardcoded secret key in ENV variable in Dockerfile.",
+                        "recommendation": "Pass secrets at runtime using build-args or secret mounts.",
+                    })
+
+            if not has_user and lines:
+                findings.append({
+                    "file": path.name,
+                    "line": 1,
+                    "type": "Runs as Root",
+                    "severity": "MEDIUM",
+                    "description": "No non-root USER instruction found in Dockerfile.",
+                    "recommendation": "Add 'USER appuser' before CMD/ENTRYPOINT to adhere to principle of least privilege.",
+                })
+        except Exception as e:
+            findings.append({"file": path.name, "line": 0, "type": "Read Error", "severity": "LOW", "description": str(e), "recommendation": "Check permissions"})
+
+        return findings
+
+    def fix_vulnerabilities(self, code: str, vulnerabilities: List[Dict[str, Any]]) -> Tuple[str, int]:
+        """
+        Auto-remediates detected OWASP vulnerabilities in Python code string.
+        Returns (remediated_code, fixes_applied_count).
+        """
+        if not vulnerabilities:
+            return code, 0
+
+        lines = code.splitlines()
+        fixes_applied = 0
+
+        # Sort vulns by line number descending so modifying lines doesn't shift earlier line numbers
+        sorted_vulns = sorted(vulnerabilities, key=lambda v: v.get("line", 0), reverse=True)
+
+        for v in sorted_vulns:
+            line_idx = v.get("line", 0) - 1
+            if not (0 <= line_idx < len(lines)):
+                continue
+
+            orig_line = lines[line_idx]
+            vtype = v.get("type", "")
+            rule_id = v.get("rule_id", "")
+
+            # 1. Hardcoded Credentials
+            if "Credential" in vtype or rule_id.startswith("SEC-CRED"):
+                # Match var_name = "secret"
+                match = re.search(r'([a-zA-Z0-9_]+)\s*=\s*(["\'].*?["\'])', orig_line)
+                if match:
+                    var_name = match.group(1)
+                    env_name = var_name.upper()
+                    indent = orig_line[:len(orig_line) - len(orig_line.lstrip())]
+                    lines[line_idx] = f"{indent}{var_name} = os.getenv('{env_name}', '')  # SEC-FIX: Loaded from environment"
+                    fixes_applied += 1
+
+            # 2. Unsafe eval/exec
+            elif "Unsafe Code" in vtype or rule_id.startswith("SEC-CODE"):
+                if "eval(" in orig_line:
+                    lines[line_idx] = orig_line.replace("eval(", "ast.literal_eval(")
+                    fixes_applied += 1
+                elif "exec(" in orig_line:
+                    indent = orig_line[:len(orig_line) - len(orig_line.lstrip())]
+                    lines[line_idx] = f"{indent}# SEC-FIX: Removed unsafe exec execution: {orig_line.strip()}"
+                    fixes_applied += 1
+
+            # 3. Command Injection via os.system
+            elif "Command Injection" in vtype or rule_id.startswith("SEC-CMD"):
+                if "os.system(" in orig_line:
+                    indent = orig_line[:len(orig_line) - len(orig_line.lstrip())]
+                    cmd_arg = re.search(r'os\.system\((.*?)\)', orig_line)
+                    if cmd_arg:
+                        arg_val = cmd_arg.group(1)
+                        lines[line_idx] = f"{indent}subprocess.run({arg_val}, shell=False, check=True)  # SEC-FIX: Safe subprocess execution"
+                        fixes_applied += 1
+                elif "shell=True" in orig_line:
+                    lines[line_idx] = orig_line.replace("shell=True", "shell=False")
+                    fixes_applied += 1
+
+            # 4. Weak Hash (MD5 / SHA1)
+            elif "Weak Crypto" in vtype or rule_id.startswith("SEC-CRYPTO"):
+                if "hashlib.md5(" in orig_line:
+                    lines[line_idx] = orig_line.replace("hashlib.md5(", "hashlib.sha256(")
+                    fixes_applied += 1
+                elif "hashlib.sha1(" in orig_line:
+                    lines[line_idx] = orig_line.replace("hashlib.sha1(", "hashlib.sha256(")
+                    fixes_applied += 1
+
+        remediated_code = "\n".join(lines)
+        if fixes_applied > 0 and "import os" not in remediated_code and "os.getenv" in remediated_code:
+            remediated_code = "import os\n" + remediated_code
+        if fixes_applied > 0 and "import subprocess" not in remediated_code and "subprocess.run" in remediated_code:
+            remediated_code = "import subprocess\n" + remediated_code
+        if fixes_applied > 0 and "import ast" not in remediated_code and "ast.literal_eval" in remediated_code:
+            remediated_code = "import ast\n" + remediated_code
+
+        return remediated_code, fixes_applied
+
+    def auto_remediate_file(self, file_path: Union[str, Path]) -> Dict[str, Any]:
+        """
+        Audits and automatically remediates security vulnerabilities in a Python file.
+        Overwrites the file with secure code if fixes were made.
+        """
+        path = Path(file_path).resolve()
+        audit_res = self.audit_file(path)
+        vulns = audit_res.get("vulnerabilities", [])
+        if not vulns:
+            return {"file_path": str(path), "fixes_applied": 0, "status": "Clean (No vulnerabilities found)"}
+
+        try:
+            code = path.read_text(encoding="utf-8")
+            remediated_code, fixes_applied = self.fix_vulnerabilities(code, vulns)
+            if fixes_applied > 0:
+                path.write_text(remediated_code, encoding="utf-8")
+            return {
+                "file_path": str(path),
+                "fixes_applied": fixes_applied,
+                "original_score": audit_res.get("score"),
+                "status": f"Successfully applied {fixes_applied} security remediation fixes.",
+            }
+        except Exception as e:
+            return {"file_path": str(path), "fixes_applied": 0, "error": str(e), "status": "Failed to auto-remediate"}
+
