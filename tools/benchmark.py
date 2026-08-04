@@ -1,7 +1,6 @@
 """
 One-time system benchmark for Chakra-AI.
-Measures actual tokens/sec on this hardware and saves optimal settings.
-Runs once per system, caches results in .chakra_benchmark.json.
+Tries llama.cpp first (fastest), falls back to PyTorch.
 Author & Creator: Abhirup Guha (Info Security Solution)
 """
 import json
@@ -10,123 +9,105 @@ import time
 from pathlib import Path
 
 BENCHMARK_FILE = Path(".chakra_benchmark.json")
-TARGET_SECONDS = 45  # Target generation time in seconds (70% of a reasonable wait)
-CPU_USAGE_FACTOR = 0.7  # Use 70% of measured capacity
+TARGET_SECONDS = 15  # Under 15s for code gen with fast backend
+CPU_USAGE_FACTOR = 1.0
 
 
 def run_benchmark() -> dict:
     """Run the benchmark and return results."""
     print("=" * 60, flush=True)
     print("  Chakra-AI System Benchmark", flush=True)
-    print("  Measuring optimal tokens/sec for your hardware...", flush=True)
+    print("  Finding fastest backend on your hardware...", flush=True)
     print("=" * 60, flush=True)
     print(flush=True)
 
-    # Step 1: Import and load model
-    print("[1/3] Loading model...", flush=True)
-    t0 = time.time()
+    tokens_per_sec = 0
+    backend_name = "unknown"
 
-    from transformers import AutoModelForCausalLM, AutoTokenizer
-    import torch
+    # Step 1: Try llama.cpp GGUF first (fastest)
+    print("[1/2] Checking for fast llama.cpp backend...", flush=True)
+    try:
+        from chakra.engine_llama import LlamaCppBackend
+        backend = LlamaCppBackend()
+        if backend.loaded:
+            backend_name = backend.model_name
+            backend.generate("Hello", n_new=4)  # warmup
 
-    model_path = "models/chakra_local"
-    if not Path(model_path).exists():
-        print("[ERROR] Model not found at models/chakra_local/", flush=True)
-        print("        Run: python tools/download_model.py", flush=True)
-        sys.exit(1)
+            t0 = time.time()
+            backend.generate("Write a simple Python function that adds two numbers:", n_new=64)
+            elapsed = time.time() - t0
+            tokens_per_sec = 64 / elapsed if elapsed > 0 else 1.0
+            print(f"       llama.cpp ({backend_name}): {tokens_per_sec:.1f} tokens/sec ({elapsed:.1f}s)", flush=True)
+    except Exception as e:
+        print(f"       llama.cpp not available: {e}", flush=True)
 
-    tok = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
-    model = AutoModelForCausalLM.from_pretrained(
-        model_path,
-        trust_remote_code=True,
-        torch_dtype=torch.float32,
-        low_cpu_mem_usage=True,
-    ).to("cpu")
-    model.eval()
+    # Step 2: PyTorch fallback
+    if tokens_per_sec < 1:
+        print("[2/2] Trying PyTorch backend...", flush=True)
+        try:
+            from transformers import AutoModelForCausalLM, AutoTokenizer
+            import torch
 
-    load_time = time.time() - t0
-    print(f"       Model loaded in {load_time:.1f}s", flush=True)
+            model_path = "models/chakra_local"
+            tok = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
+            model = AutoModelForCausalLM.from_pretrained(
+                model_path, trust_remote_code=True,
+                torch_dtype=torch.float16, low_cpu_mem_usage=True,
+            ).to("cpu")
+            model.eval()
 
-    # Step 2: Benchmark generation speed
-    print("[2/3] Benchmarking generation speed...", flush=True)
+            inputs = tok("Hello:", return_tensors="pt")
+            with torch.no_grad():
+                model.generate(**inputs, max_new_tokens=4, pad_token_id=tok.eos_token_id)
 
-    # Warmup run (discard)
-    inputs = tok("Write hello world in Python:", return_tensors="pt", return_attention_mask=True)
-    with torch.no_grad():
-        model.generate(**inputs, max_new_tokens=8, pad_token_id=tok.eos_token_id)
-
-    # Actual benchmark: generate 64 tokens
-    bench_tokens = 64
-    inputs = tok("Write a simple Python function that adds two numbers:", return_tensors="pt", return_attention_mask=True)
-
-    t0 = time.time()
-    with torch.no_grad():
-        outputs = model.generate(
-            **inputs,
-            max_new_tokens=bench_tokens,
-            do_sample=True,
-            temperature=0.7,
-            pad_token_id=tok.eos_token_id,
-        )
-    elapsed = time.time() - t0
-
-    actual_tokens = outputs.shape[1] - inputs["input_ids"].shape[1]
-    tokens_per_sec = actual_tokens / elapsed if elapsed > 0 else 1.0
-
-    print(f"       Generated {actual_tokens} tokens in {elapsed:.1f}s", flush=True)
-    print(f"       Speed: {tokens_per_sec:.2f} tokens/sec", flush=True)
+            inputs = tok("Write a simple Python function that adds two numbers:", return_tensors="pt")
+            t0 = time.time()
+            with torch.no_grad():
+                outputs = model.generate(**inputs, max_new_tokens=64, do_sample=True, temperature=0.7, pad_token_id=tok.eos_token_id)
+            elapsed = time.time() - t0
+            tokens_per_sec = 64 / elapsed if elapsed > 0 else 1.0
+            backend_name = "PyTorch float16"
+            print(f"       PyTorch (float16): {tokens_per_sec:.1f} tokens/sec ({elapsed:.1f}s)", flush=True)
+        except Exception as e:
+            print(f"[ERROR] PyTorch failed: {e}", flush=True)
+            sys.exit(1)
 
     # Step 3: Calculate optimal settings
-    print("[3/3] Calculating optimal settings...", flush=True)
+    print("[2/2] Calculating optimal settings...", flush=True)
 
-    # Target: generate for TARGET_SECONDS at 70% CPU usage
     optimal_tokens = int(tokens_per_sec * TARGET_SECONDS * CPU_USAGE_FACTOR)
-    optimal_tokens = max(64, min(optimal_tokens, 1024))  # Clamp between 64-1024
-
-    # Estimate time for different token counts
-    estimates = {
-        "64_tokens": f"{64 / tokens_per_sec:.0f}s",
-        "128_tokens": f"{128 / tokens_per_sec:.0f}s",
-        "192_tokens": f"{192 / tokens_per_sec:.0f}s",
-        "256_tokens": f"{256 / tokens_per_sec:.0f}s",
-        f"{optimal_tokens}_optimal": f"{optimal_tokens / tokens_per_sec:.0f}s",
-    }
+    optimal_tokens = max(64, min(optimal_tokens, 2048))
 
     results = {
         "tokens_per_sec": round(tokens_per_sec, 2),
+        "backend": backend_name,
         "optimal_gen_tokens": optimal_tokens,
         "target_seconds": TARGET_SECONDS,
-        "cpu_usage_factor": CPU_USAGE_FACTOR,
-        "model_load_time": round(load_time, 1),
-        "bench_tokens_generated": actual_tokens,
-        "bench_time": round(elapsed, 2),
-        "estimates": estimates,
+        "estimates": {
+            "64_tokens":  f"{64 / max(tokens_per_sec, 0.01):.1f}s",
+            "256_tokens": f"{256 / max(tokens_per_sec, 0.01):.1f}s",
+            "512_tokens": f"{512 / max(tokens_per_sec, 0.01):.1f}s",
+            f"{optimal_tokens}_optimal": f"{optimal_tokens / max(tokens_per_sec, 0.01):.1f}s",
+        },
         "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
     }
 
-    # Save results
     BENCHMARK_FILE.write_text(json.dumps(results, indent=2), encoding="utf-8")
 
     print(flush=True)
     print("=" * 60, flush=True)
-    print("  Benchmark Complete!", flush=True)
-    print(f"  Speed: {tokens_per_sec:.2f} tokens/sec", flush=True)
+    print(f"  Backend: {backend_name}", flush=True)
+    print(f"  Speed: {tokens_per_sec:.1f} tokens/sec", flush=True)
     print(f"  Optimal gen_tokens: {optimal_tokens}", flush=True)
-    print(f"  Est. generation time: {optimal_tokens / tokens_per_sec:.0f}s", flush=True)
+    print(f"  Gen time: ~{optimal_tokens / max(tokens_per_sec, 0.01):.0f}s", flush=True)
     print(f"  Results saved to: {BENCHMARK_FILE}", flush=True)
     print("=" * 60, flush=True)
 
-    # Cleanup
-    del model
-    del tok
-    import gc
-    gc.collect()
-
+    import gc; gc.collect()
     return results
 
 
 def load_benchmark() -> dict:
-    """Load cached benchmark results if available."""
     if BENCHMARK_FILE.exists():
         try:
             return json.loads(BENCHMARK_FILE.read_text(encoding="utf-8"))
@@ -135,14 +116,12 @@ def load_benchmark() -> dict:
     return {}
 
 
-def get_optimal_gen_tokens(default: int = 192) -> int:
-    """Get optimal gen_tokens from benchmark, or default if not benchmarked."""
+def get_optimal_gen_tokens(default: int = 512) -> int:
     results = load_benchmark()
     return results.get("optimal_gen_tokens", default)
 
 
-def get_tokens_per_sec(default: float = 4.0) -> float:
-    """Get measured tokens/sec from benchmark, or default if not benchmarked."""
+def get_tokens_per_sec(default: float = 300) -> float:
     results = load_benchmark()
     return results.get("tokens_per_sec", default)
 
