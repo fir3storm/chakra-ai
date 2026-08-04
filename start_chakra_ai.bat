@@ -1,9 +1,10 @@
 @echo off
-title Chakra-AI Agentic Terminal - Abhirup Guha (Info Security Solution)
+title Chakra AI - Agentic Code Terminal
 cd /d "%~dp0"
 echo.
 echo =======================================================================
-echo  Chakra-AI Agentic Coding Terminal
+echo  Chakra AI - Agentic Code Terminal
+echo  github.com/fir3storm/chakra-ai
 echo.
 echo  Engine C (default): Qwen2.5-Coder-1.5B, ~2.5 GB RAM, any OS
 echo  Engine B:           PyTorch Kimi K3, ~8 GB RAM, Windows

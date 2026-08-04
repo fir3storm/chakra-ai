@@ -79,17 +79,17 @@ def clear_screen() -> None:
 
 
 def print_banner() -> None:
-    """Render ASCII banner with branding for Abhirup Guha (Info Security Solution)."""
+    """Render ASCII banner with branding for Chakra AI."""
     banner_art = r"""
   ╔═══════════════════════════════════════════════════════════════════════════╗
   ║   ____ _   _    _    _  ___  _       _    ___                             ║
-  ║  / ___| | | |  / \  | |/ / |  _ \   / \  |_ _|   CHAKRA-AI TERMINAL       ║
-  ║ | |   | |_| | / _ \ | ' /| |_) | / _ \  | |    Agentic Code Generator   ║
-  ║ | |___|  _  |/ ___ \| . \|  _ < / ___ \ | |    Pure PyTorch MoE Engine  ║
+  ║  / ___| | | |  / \  | |/ / |  _ \   / \  |_ _|   CHAKRA AI               ║
+  ║ | |   | |_| | / _ \ | ' /| |_) | / _ \  | |    Agentic Code Terminal     ║
+  ║ | |___|  _  |/ ___ \| . \|  _ < / ___ \ | |    Multi-Engine MoE          ║
   ║  \____|_| |_/_/   \_\_|\_\_|_| \_\_/   \_\___|                            ║
   ║                                                                           ║
-  ║  Chakra-AI Engine: Windows Lossless Streaming MoE & Code Sandbox          ║
-  ║  Author & Creator: Abhirup Guha (Info Security Solution)                  ║
+  ║  Author: Abhirup Guha (Info Security Solution)                            ║
+  ║  github.com/fir3storm/chakra-ai                                           ║
   ╚═══════════════════════════════════════════════════════════════════════════╝
 """
     c = Colors
