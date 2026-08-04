@@ -29,7 +29,7 @@ def add(a: int, b: int) -> int:
     def test_hardcoded_credentials(self) -> None:
         vulnerable_code = """
 AWS_SECRET_KEY = "AKIAIOSFODNN7EXAMPLE"
-db_password = "SuperSecretPassword123!"
+db_password = "change_me_before_production"
 """
         res = self.auditor.audit_code(vulnerable_code)
         self.assertLess(res["score"], 100)
