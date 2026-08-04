@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "chakra-ai"
-version = "0.1.0"
+version = "0.2.0"
 description = "Chakra AI - Agentic Coding Terminal with Multi-Engine Kimi K3 Support"
 readme = "README.md"
 requires-python = ">=3.10"

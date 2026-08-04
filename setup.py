@@ -6,7 +6,7 @@ long_description = (this_directory / "README.md").read_text(encoding="utf-8") if
 
 setup(
     name="chakra-ai",
-    version="0.1.0",
+    version="0.2.0",
     description="Chakra AI - Agentic Coding Terminal with Multi-Engine Kimi K3 Support",
     long_description=long_description,
     long_description_content_type="text/markdown",
