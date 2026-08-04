@@ -19,13 +19,18 @@ from chakra.session import SessionManager
 from chakra.persona import PersonaManager
 from chakra.tokenizer import KimiTokenizer
 from chakra.ui import (
+    Spinner,
     clear_screen,
     print_agent_step,
     print_banner,
+    print_chat_role,
     print_code_box,
     print_diff_box,
+    print_header,
     print_sessions_list,
     print_step,
+    print_tool,
+    progress_bar,
     print_vuln_report,
 )
 
@@ -663,46 +668,48 @@ def run_repl(
                 print_step("AGENT", "Usage: /code <python task prompt>", "WARN")
                 continue
 
-            print_step("AGENT", f"[{active_persona.upper()}] Running task: '{code_prompt}'...", "WAIT")
-            print_step("AGENT", f"Generating code ({gen_tokens} tokens on CPU, please wait)...", "INFO")
-            res = agent.run_agentic_loop(
-                prompt=full_prompt,
-                max_retries=3,
-                gen_tokens=gen_tokens,
-                incremental=incremental,
-            )
+            with Spinner(f"Thinking about: {code_prompt[:50]}...") as sp:
+                res = agent.run_agentic_loop(
+                    prompt=full_prompt,
+                    max_retries=3,
+                    gen_tokens=gen_tokens,
+                    incremental=incremental,
+                )
+                sp.set_result(f"{len(res['code'].splitlines())} lines")
 
             previous_code = last_code
             last_code = res["code"]
 
-            # Auto-save code to file instead of displaying
+            # Auto-save and execute
             try:
                 output_dir = Path("chakra_output")
                 output_dir.mkdir(exist_ok=True)
                 code_file = output_dir / "generated_script.py"
                 code_file.write_text(last_code, encoding="utf-8")
-                print_step("SAVE", f"Code saved to: {code_file.resolve()}", "INFO")
+                print_tool("save", f"chakra_output/generated_script.py", f"→ {len(last_code.splitlines())} lines")
 
-                # Execute the saved file
                 exec_res = agent.run_in_sandbox(code_file, timeout=30)
                 if exec_res["success"]:
-                    print_step("DONE", "Task completed successfully", "SUCCESS")
+                    print_tool("execute", "Sandbox execution", f"→ Exit 0")
                     if exec_res["stdout"].strip():
-                        print_step("OUTPUT", exec_res["stdout"].strip(), "INFO")
+                        print_chat_role("assistant", exec_res["stdout"].strip())
                 else:
-                    print_step("DONE", "Task completed with errors", "WARN")
-                    if exec_res["stderr"].strip():
-                        print_step("ERROR", exec_res["stderr"].strip(), "FAIL")
+                    print_tool("error", "Sandbox execution failed", f"→ {exec_res.get('stderr', '')[:80]}")
             except Exception as err:
-                print_step("ERROR", f"Failed to save/execute: {err}", "FAIL")
-
-            if res["success"]:
-                print_step("SANDBOX", f"Execution SUCCESS (Completed in {res['iterations']} iteration(s))", "SUCCESS")
-            else:
-                print_step("SANDBOX", f"Execution FAILED after {res['iterations']} iteration(s)", "FAIL")
+                print_tool("error", f"Failed: {err}")
         else:
-            chat_reply = agent.chat(full_prompt, gen_tokens=gen_tokens, incremental=incremental)
-            print_step("ASSISTANT", chat_reply, "SUCCESS")
+            # Chat mode with streaming when available
+            if isinstance(model, LocalModelRunner) and model.loaded:
+                with Spinner("Thinking...") as sp:
+                    full_response = []
+                    for chunk in model.generate_stream(full_prompt, n_new=gen_tokens):
+                        full_response.append(chunk)
+                        print(chunk, end="", flush=True)
+                    sp.set_result(f"{len(full_response)} chunks")
+                print()  # newline after stream
+            else:
+                chat_reply = agent.chat(full_prompt, gen_tokens=gen_tokens, incremental=incremental)
+                print_chat_role("assistant", chat_reply)
 
         session_mgr.save_session(
             session_id=active_session_id,

@@ -16,7 +16,18 @@ from .session import SessionManager
 from .st_reader import SafetensorsReader, TensorInfo
 from .tokenizer import KimiTokenizer
 from .trunk_streamer import TrunkStreamer
-from .ui import clear_screen, print_agent_step, print_banner, print_code_box, print_step
+from .ui import (
+    Spinner,
+    clear_screen,
+    print_agent_step,
+    print_banner,
+    print_chat_role,
+    print_code_box,
+    print_header,
+    print_step,
+    print_tool,
+    progress_bar,
+)
 from .workspace import WorkspaceIndexer
 
 __version__ = "0.1.0"
@@ -47,9 +58,14 @@ __all__ = [
     "dequantize_mxfp4_torch",
     "KimiTokenizer",
     "clear_screen",
+    "Spinner",
     "print_agent_step",
     "print_banner",
+    "print_chat_role",
     "print_code_box",
+    "print_header",
     "print_step",
+    "print_tool",
+    "progress_bar",
 ]
 

@@ -80,8 +80,8 @@ class TestTerminalUI(unittest.TestCase):
             ui.print_banner()
 
         output = captured_output.getvalue()
-        self.assertIn("CHAKRA-AI TERMINAL", output)
-        self.assertIn("Chakra-AI Engine", output)
+        self.assertIn("CHAKRA AI", output)
+        self.assertIn("github.com/fir3storm/chakra-ai", output)
 
 
 class TestREPLPromptHandling(unittest.TestCase):
@@ -120,9 +120,8 @@ class TestREPLPromptHandling(unittest.TestCase):
 
         output = captured_output.getvalue()
         self.assertIn("Chakra-AI Agentic Terminal Active", output)
-        self.assertIn("Running task: 'Write hello world script'", output)
-        self.assertIn("Code saved to", output)
-        self.assertIn("Task completed successfully", output)
+        self.assertIn("Thinking about: Write hello world script", output)
+        self.assertIn("chakra_output/generated_script.py", output)
         self.assertIn("Exiting Chakra-AI", output)
 
         mock_agent.run_agentic_loop.assert_called_once()
@@ -182,8 +181,8 @@ class TestREPLPromptHandling(unittest.TestCase):
             )
 
         output = captured_output.getvalue()
-        self.assertIn("Running task: 'Broken task'", output)
-        self.assertIn("Code saved to", output)
+        self.assertIn("Thinking about: Broken task", output)
+        self.assertIn("chakra_output/generated_script.py", output)
 
 
 if __name__ == "__main__":
