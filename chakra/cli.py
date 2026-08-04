@@ -662,8 +662,11 @@ def run_repl(
 
             previous_code = last_code
             last_code = res.get("code", "")
-            if last_code:
-                print_code_box(last_code, title=f"TEAM GENERATED CODE [{active_persona.upper()}]")
+            # Save team output to file instead of displaying
+            output_dir = Path("chakra_output")
+            output_dir.mkdir(exist_ok=True)
+            team_file = output_dir / f"team_output_{active_session_id}.py"
+            team_file.write_text(last_code, encoding="utf-8")
 
             if res.get("success", False):
                 print_step("SANDBOX", f"Execution SUCCESS (Completed in {res.get('iterations', 1)} iteration(s))", "SUCCESS")
@@ -947,7 +950,7 @@ def run_repl(
                     print(chunk, end="", flush=True)
                 print(flush=True)  # final newline
             else:
-                chat_reply = agent.chat(full_prompt, gen_tokens=gen_tokens, incremental=incremental)
+                chat_reply = agent.chat(full_prompt, gen_tokens=gen_tokens, incremental=incremental, system=system_msg)
                 print_chat_role("assistant", chat_reply)
 
         session_mgr.save_session(

@@ -477,7 +477,7 @@ class KimiAgent:
         )
         return "".join(diff_gen)
 
-    def chat(self, user_prompt: str, gen_tokens: int = 128, incremental: bool = True) -> str:
+    def chat(self, user_prompt: str, gen_tokens: int = 128, incremental: bool = True, system: str = "") -> str:
         """
         Sends user prompt to model for dynamic text generation, updates chat history, and returns response.
         """
@@ -486,6 +486,9 @@ class KimiAgent:
         # Route through LocalModelRunner's native tokenizer when available
         if isinstance(self.model, LocalModelRunner) and self.model.loaded:
             response_text = self.model.generate(user_prompt, n_new=gen_tokens)
+        elif hasattr(self.model, "generate") and hasattr(self.model, "model_name"):
+            # LlamaCppBackend — use system message
+            response_text = self.model.generate(user_prompt, n_new=gen_tokens, system=system)
         elif self.model is not None and hasattr(self.model, "generate") and self.tokenizer is not None:
             import torch
             cfg_obj = getattr(self.model, "config", getattr(self.model, "c", None))
@@ -531,11 +534,7 @@ class KimiAgent:
         model = model or self.model
         tokenizer = tokenizer or self.tokenizer
         attempts_history: List[Dict[str, Any]] = []
-        current_prompt = (
-            f"Write a complete, runnable Python script for the following request:\n"
-            f"{task_prompt}\n"
-            f"Enclose python code in ```python ... ``` code block."
-        )
+        current_prompt = task_prompt
 
         last_code = ""
         last_exec_res: Dict[str, Any] = {
