@@ -1,13 +1,18 @@
-# Chakra AI
+# ⚡ Chakra AI
 
-> **Agentic Coding Terminal with Multi-Engine Kimi K3 Support**  
-> **Author & Creator:** Abhirup Guha  
-> **Organization:** Info Security Solution
+<div align="center">
+
+**Agentic Coding Terminal · Multi-Engine MoE Inference · Made in India 🇮🇳**
 
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/)
 [![License MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-174%20passed-brightgreen.svg)](#testing)
-[![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-lightgrey.svg)](#installation)
+[![Tests](https://img.shields.io/badge/tests-174%20passed-brightgreen.svg)](#-testing)
+[![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-lightgrey.svg)](#-quick-start)
+[![Made in India](https://img.shields.io/badge/made%20in-India-FF9933.svg)](#-made-in-india)
+
+*A terminal where you talk to AI like a pair programmer. It writes code, runs it in a sandbox, finds security bugs, and fixes errors — all on an 8GB laptop.*
+
+</div>
 
 ---
 
@@ -23,46 +28,42 @@
 
 ---
 
-## What is Chakra AI?
+## 🎯 What is Chakra AI?
 
-Chakra AI is an **agentic coding terminal** that combines AI-powered code generation with multi-agent collaboration, security auditing, and sandboxed execution. It runs on standard consumer hardware with **8GB RAM**.
+Chakra AI is a **terminal-based AI coding companion** built from scratch in India. You type what you want in plain English, and an AI agent writes code, executes it in an isolated sandbox, audits it for security vulnerabilities, and self-debugs if anything breaks — all **100% offline** on an 8GB RAM laptop.
 
-**Key capabilities:**
-- Multi-agent team collaboration (Architect, Coder, Auditor, Supervisor)
-- Automatic code generation, sandbox execution, and self-debugging
-- InfoSec static security analysis (10+ OWASP rules)
-- Persistent sessions and persona switching
-- Three inference engine tiers for different hardware
+```
+You: "make a folder called Abhi and put a calculator in it"
 
----
+  ⠋ Thinking about: make a folder called Abhi...
+  ✔ Thinking... 12 lines (45.2s)
+  💾 chakra_output/generated_script.py → 12 lines
+  ⚡ Sandbox execution → Exit 0
 
-## Three Engine Tiers
+Done. The folder 'Abhi' exists with calculator.py inside.
+```
 
-### Engine A: kimi-k3-in-c (Linux, Full Kimi K3)
-- **Model**: Full 2.78 trillion parameter Kimi K3
-- **RAM**: 8.24 GB peak (measured)
-- **Storage**: 1.56 TB checkpoint + 109 GB packed trunk
-- **Speed**: ~32 s/token (disk I/O bound)
-- **Verification**: Bit-exact against PyTorch reference
-- **Setup**: `scripts/build_k3.sh`, then `--trunk <path> --engine c-backend`
-
-### Engine B: PyTorch (Windows, Full Kimi K3)
-- **Model**: Same Kimi K3, PyTorch implementation
-- **RAM**: ~8-10 GB (trunk streaming with ring buffer)
-- **Storage**: 1.56 TB checkpoint
-- **Features**: Fused MXFP4 matmul (7.5x less memory traffic), ring buffer streaming, direct I/O
-- **Setup**: `--trunk <path> --engine pytorch`
-
-### Engine C: Qwen2.5-Coder (Any OS, Lightweight) — Default
-- **Model**: Qwen2.5-Coder-1.5B-Instruct (~1.1 GB)
-- **RAM**: ~2.5 GB total
-- **Speed**: ~4 tokens/sec on CPU
-- **Features**: Fluent code generation, chat, 100% offline
-- **Setup**: Auto-downloads on first launch
+No API keys. No internet. No GPU. Just your terminal and an AI that builds things with you.
 
 ---
 
-## Quick Start
+## ✨ Features
+
+| Category | What It Does |
+|----------|-------------|
+| 🧠 **Multi-Agent Team** | Architect → Coder → Auditor → Supervisor collaborate to build complete projects |
+| 🔒 **Security Auditor** | 10+ OWASP vulnerability checks (hardcoded secrets, SQL injection, eval, weak crypto) |
+| 🏖 **Sandbox Execution** | Code runs in an isolated subprocess, never touches your system |
+| 🔄 **Self-Debugging Loop** | If code fails, errors are fed back to the model to fix automatically |
+| 🎭 **Persona Switcher** | Hot-swap between fullstack, infosec, architect, devops |
+| 💾 **Persistent Sessions** | Save and resume conversations with `/sessions` and `/resume` |
+| 🌲 **Workspace Awareness** | `/context` indexes your files, `/tree` shows your directory |
+| ⚡ **Streaming Output** | Tokens appear as generated — like a real conversation |
+| 📊 **System Benchmark** | Auto-measures tokens/sec and configures optimal settings |
+
+---
+
+## ❇️ Quick Start
 
 ```bash
 # Clone
@@ -71,201 +72,216 @@ cd chakra-ai
 
 # Install
 pip install -e .
+pip install hf_xet              # for fast model downloads
 
-# Launch (Windows)
-start_chakra_ai.bat
+# Launch
+start_chakra_ai.bat             # Windows double-click
+python -m chakra.cli             # any OS terminal
+```
 
-# Launch (any OS)
-python -m chakra.cli
+On first launch, Chakra AI auto-downloads a 1.5B parameter coding model (~1.1 GB). It takes a few minutes with a decent internet connection. After that, everything runs completely offline.
+
+---
+
+## 🎮 The Terminal Experience
+
+```
+(fullstack) > hi
+
+  ⠋ Thinking...
+  Hello! I'm your coding assistant. What would you like to build today?
+  ✔ Thinking... 3 chunks (2.1s)
+
+(fullstack) > make a python calculator
+
+  ⠋ Thinking about: make a python calculator...
+  ✔ Thinking... 12 lines (45.2s)
+  💾 chakra_output/generated_script.py → 12 lines
+  ⚡ Sandbox execution → Exit 0
+
+(fullstack) > /persona infosec
+(fullstack) > /audit chakra_output/generated_script.py
+
+  🛡 InfoSec Audit Report
+  Target: chakra_output/generated_script.py
+  ✔ PASS: No vulnerabilities detected. Score: 100/100
+
+(fullstack) > /status
+
+  Engine:   LocalModelRunner (Qwen2.5-Coder-1.5B)
+  Device:   cpu
+  Persona:  [INFOSEC] - InfoSec Expert & Security Auditor
+  Session:  sess_53161
+  RAM:      2847.3 MB
 ```
 
 ---
 
-## Agentic Features
+## 🏗 Three Engine Tiers
 
-### Multi-Agent Pipeline
+Chakra AI adapts to whatever hardware you have:
+
 ```
-User: "make a folder called Abhi and put a calculator in it"
-  ↓
-Architect → Designs blueprint (config → engine → main)
-  ↓
-Coder → Generates Python code for each module
-  ↓
-Auditor → Security audit + sandbox execution
-  ↓
-Result: Code saved to file, executed, output shown
+┌──────────────────────────────────────────────────────────┐
+│ ENGINE A           ENGINE B           ENGINE C (default) │
+│ kimi-k3-in-c       PyTorch K3         Qwen2.5-Coder      │
+│ Full 2.78T model   Full 2.78T model   1.5B coding model  │
+│ 8.24 GB RAM        8-10 GB RAM        2.5 GB RAM         │
+│ 1.56 TB disk       1.56 TB disk       1.1 GB disk        │
+│ Linux only         Windows/Linux      Any OS             │
+│ Bit-exact verified atol 1e-4          Always works       │
+│ ═════════════════  ═════════════════  ═════════════════   │
+│ Setup: build_k3.sh --trunk <path>     Auto-downloads     │
+└──────────────────────────────────────────────────────────┘
 ```
 
-### REPL Commands
+---
 
-| Command | Description |
+## 🔧 All Commands
+
+| Command | What it does |
 |---------|-------------|
-| `<prompt>` | Natural language code generation + execution |
-| `/team <prompt>` | Multi-agent team collaboration |
-| `/persona [role]` | Switch persona (fullstack, infosec, architect, devops) |
-| `/audit <file>` | Security audit a single file |
-| `/scan-vuln` | Scan workspace for vulnerabilities |
-| `/context` | Show workspace file index |
-| `/tree` | Show directory tree |
+| `type anything` | AI generates code, executes it, self-debugs |
+| `/team <prompt>` | Multi-agent collaboration (Architect→Coder→Auditor) |
+| `/persona [role]` | Switch persona: `fullstack`, `infosec`, `architect`, `devops` |
+| `/audit <file>` | Security audit a single Python file |
+| `/scan-vuln` | Scan all Python files in workspace for vulnerabilities |
+| `/context` | Show workspace file index (counts, sizes) |
+| `/tree` | Render directory tree |
+| `/run <file>` | Execute a Python file in sandbox |
+| `/diff [file]` | Show code diff between versions |
 | `/sessions` | List saved sessions |
-| `/resume <id>` | Resume a saved session |
-| `/status` | Show engine info, RAM usage |
+| `/resume <id>` | Resume a previous session |
+| `/save <file>` | Save last generated code |
+| `/status` | Show engine, RAM, session info |
+| `/clear` | Clear terminal |
 | `/help` | Show all commands |
-
-### Personas
-
-| Persona | Focus |
-|---------|-------|
-| **fullstack** | General software engineering |
-| **infosec** | Security auditing, OWASP vulnerabilities |
-| **architect** | System design, clean architecture |
-| **devops** | Deployment, automation, infrastructure |
+| `/exit` | Save session and quit |
 
 ---
 
-## Security Auditing
+## 🔒 Security Auditing
 
-Chakra AI includes `InfoSecAuditor` with 10+ OWASP security rules:
+Chakra AI scans every piece of generated code with 10+ OWASP rules:
 
-- Hardcoded credentials/secrets
-- SQL injection via dynamic queries
-- `eval()`/`exec()` code injection
-- `os.system` / `subprocess(shell=True)` command injection
-- Weak cryptography (MD5, SHA1)
-- Unsafe deserialization (pickle, yaml.unsafe_load)
+- 🔑 **Hardcoded credentials** — passwords, API keys, tokens
+- 💉 **SQL injection** — dynamic query construction
+- ⚠️ **Code injection** — `eval()`, `exec()`, `__import__`
+- 🔨 **Command injection** — `os.system`, `subprocess(shell=True)`
+- 🔐 **Weak cryptography** — MD5, SHA1, DES
+- 📦 **Unsafe deserialization** — `pickle.loads`, `yaml.unsafe_load`
+
+Each finding gets a severity rating, line number, and actionable remediation advice.
+
+---
+
+## ⚙️ CLI Flags
 
 ```bash
-(fullstack) > /audit chakra/agent.py
-(fullstack) > /scan-vuln
-```
-
----
-
-## Kernel-Level Optimizations
-
-### Fused MXFP4 Matmul
-- Operates on packed nibbles (17.55 MB/expert) instead of dequantizing to float32 (132 MB)
-- 7.5x less memory traffic per expert
-- Group-by-group accumulation with shared scale
-
-### Ring Buffer Trunk Streaming
-- Pinned prefix layers (first N layers always in RAM)
-- Ring slot for streaming remaining layers
-- Configurable via `--trunk-gb`
-
-### Direct I/O Reader
-- Linux: `O_DIRECT` bypasses page cache (5.9 GB/s measured)
-- Windows: `FILE_FLAG_NO_BUFFERING` via ctypes
-- Graceful fallback to mmap
-
-### Bit-Exact Verification
-- Gate ladder tests: tokenizer parity, config validation, MXFP4 dequantization, model forward pass
-- Numerical equivalence: atol=1e-4 against dequant-first path
-
----
-
-## One-Time System Benchmark
-
-On first launch, Chakra AI can measure your hardware's tokens/sec and auto-configure optimal settings:
-
-```bash
-python tools/benchmark.py
-```
-
-Results are cached in `.chakra_benchmark.json` and used automatically.
-
----
-
-## CLI Flags
-
-```
 python -m chakra.cli [OPTIONS]
 
-Options:
-  --preset {laptop,desktop,workstation,server}  Hardware preset (default: laptop)
-  --engine {auto,c-backend,pytorch,local}       Inference engine (default: auto)
-  --trunk PATH                                  Path to trunk weights (Engine A/B)
-  --trunk-gb FLOAT                              Trunk memory budget for ring buffer
-  --local-model PATH                            Path to local model directory
-  --gen INT                                     Max tokens to generate (default: 192)
-  --prompt TEXT                                 Single prompt mode (no REPL)
-  --tiny                                        Use 13-layer test model
-  --device {cpu,cuda}                           Compute device
+  --preset   {laptop,desktop,workstation,server}  Hardware preset
+  --engine   {auto,c-backend,pytorch,local}        Inference engine
+  --trunk    PATH                                  Trunk weights (Engine A/B)
+  --trunk-gb FLOAT                                 Memory budget for streaming
+  --gen      INT                                   Max tokens (default: 192)
+  --prompt   TEXT                                  Single-shot mode (no REPL)
+  --tiny                                          13-layer test model
+  --device   {cpu,cuda}                            Compute device
 ```
 
 ---
 
-## Testing
+## 🧪 Testing
 
 ```bash
-# Run all tests
-python -m pytest tests/ --ignore=tests/unit -v
+python -m pytest tests/ --ignore=tests/unit -v     # 174 tests
 
-# Run specific test suites
-python -m pytest tests/test_gate_ladder.py -v    # Kernel verification
-python -m pytest tests/test_numerical.py -v       # Bit-exact tests
-python -m pytest tests/test_pipeline.py -v        # Multi-agent pipeline
-python -m pytest tests/test_agent.py -v           # Agent & sandbox
+# Gate ladder — kernel correctness
+python -m pytest tests/test_gate_ladder.py -v
+
+# Numerical — bit-exact verification
+python -m pytest tests/test_numerical.py -v
+
+# Pipeline — multi-agent integration
+python -m pytest tests/test_pipeline.py -v
 ```
 
-174 tests covering:
-- Gate ladder verification (tokenizer, config, MXFP4, model forward, sandbox)
-- Numerical equivalence (RMSNorm, SiTU-GLU, KDA decay, router bias)
-- Multi-agent pipeline (architect blueprints, auditor, orchestrator)
-- CLI consolidation (sessions, personas, engine selection)
+**174 tests** covering gate ladder verification, numerical correctness, multi-agent pipeline, and CLI integration.
 
 ---
 
-## Repository Structure
+## 🌏 Made in India 🇮🇳
+
+**Chakra AI is proudly built in India.** The name "Chakra" (चक्र) is a Sanskrit word meaning "wheel" or "cycle" — representing the continuous cycle of code generation, execution, auditing, and refinement that powers every interaction.
+
+- **Author:** Abhirup Guha
+- **Organization:** Info Security Solution
+- **Location:** India
+
+Built from scratch during the rise of open-source AI tooling. Zero external dependencies for the agentic pipeline. Every line of the agent system, multi-agent orchestrator, sandbox runner, and security auditor was written by hand. The AI model itself runs locally on your machine — your code never leaves your laptop.
+
+### Why "Chakra"?
+
+In Indian philosophy, chakras are energy centers that power the body. In Chakra AI, each component is a "chakra" powering the agent:
+
+| Chakra | Component | Energy |
+|--------|-----------|--------|
+| 💬 **Vishuddha** (Throat) | Chat & Communication | Natural language understanding |
+| 🧠 **Ajna** (Third Eye) | Architect Agent | Seeing the blueprint before building |
+| ✋ **Manipura** (Solar Plexus) | Coder Agent | Taking action — writing real code |
+| 🛡 **Anahata** (Heart) | Auditor Agent | Protecting through vigilance |
+| 👑 **Sahasrara** (Crown) | Supervisor | Orchestrating the whole system |
+
+---
+
+## 📖 Technical Architecture
+
+### Kernel-Level Optimizations
+
+- **Fused MXFP4 Matmul** — Operates directly on packed 4-bit nibbles (17.55 MB/expert), 7.5x less memory traffic than dequantizing to float32
+- **Ring Buffer Trunk Streaming** — Pinned prefix layers + ring slot for streaming remaining layers
+- **Direct I/O Reader** — Linux `O_DIRECT` bypasses page cache; Windows `FILE_FLAG_NO_BUFFERING` via ctypes
+- **Bit-Exact Verification** — Gate ladder tests comparing against PyTorch reference with atol=1e-4
+
+### Repository Structure
 
 ```
 chakra-ai/
-├── chakra/                    # Core engine package
-│   ├── agent.py               # Agent, sandbox, self-debugging loop
+├── chakra/                    # Core engine
+│   ├── agent.py               # Sandbox, self-debugging loop
 │   ├── cli.py                 # REPL terminal & commands
 │   ├── engine_c_backend.py    # kimi-k3-in-c subprocess wrapper
-│   ├── model.py               # PyTorch Kimi K3 architecture + MXFP4Linear
+│   ├── model.py               # PyTorch K3 + MXFP4Linear
 │   ├── multi_agent.py         # Multi-agent orchestrator
-│   ├── ops.py                 # Fused MXFP4 matmul, RMSNorm, SiTU-GLU, KDA
-│   ├── security.py            # InfoSecAuditor (OWASP rules)
+│   ├── ops.py                 # Fused kernels, SiTU-GLU, KDA
+│   ├── security.py            # InfoSecAuditor (OWASP)
 │   ├── session.py             # Session persistence
 │   ├── persona.py             # Persona management
-│   ├── trunk_streamer.py      # Ring buffer trunk streaming
-│   ├── st_reader.py           # Safetensors reader + DirectReader
-│   └── ui.py                  # Terminal UI
-├── tests/                     # Test suite (174 tests)
+│   ├── trunk_streamer.py      # Ring buffer streaming
+│   ├── st_reader.py           # Safetensors + DirectReader
+│   └── ui.py                  # Terminal UI (spinner, tools)
+├── tests/                     # 174 tests
 ├── tools/
-│   ├── benchmark.py           # One-time system benchmark
+│   ├── benchmark.py           # System benchmark
 │   └── download_model.py      # Model downloader
-├── scripts/
-│   └── build_k3.sh            # Build kimi-k3-in-c
+├── scripts/build_k3.sh        # Build kimi-k3-in-c
 ├── start_chakra_ai.bat        # Windows launcher
 └── README.md
 ```
 
 ---
 
-## Acknowledgments
+## 🙏 Standing on the Shoulders of Giants
 
-Chakra AI builds upon the pioneering work of **Fareed Khan** and his [`kimi-k3-in-c`](https://github.com/FareedKhan-dev/kimi-k3-in-c) project.
+Chakra AI builds upon the foundational work of **Fareed Khan** and his exceptional [`kimi-k3-in-c`](https://github.com/FareedKhan-dev/kimi-k3-in-c) project — a 176 KB C99 binary that proved a 2.78 trillion parameter model could run on 8GB of RAM. His innovations in zero-copy streaming, fused MXFP4 matmul, O_DIRECT I/O, and rigorous bit-exact verification set the gold standard for memory-efficient MoE inference.
 
-Fareed Khan's C implementation demonstrated that the 2.78 trillion parameter Kimi K3 model could run on a single CPU with 8GB RAM through zero-copy weight streaming and layer-by-layer execution. His work on fused MXFP4 matmul, O_DIRECT I/O, and bit-exact verification set the standard for memory-efficient MoE inference.
+Chakra AI extends that vision into a complete agentic coding system with multi-agent collaboration, security auditing, and an interactive terminal experience — while remaining honest about where it differs and improving where it can.
 
-Chakra AI extends this vision with:
-- Cross-platform Python implementation (Windows, Linux, macOS)
-- Agentic coding pipeline (multi-agent collaboration)
-- Security auditing (OWASP static analysis)
-- Session management and persona switching
-
-We are grateful for Fareed Khan's foundational contribution to the open-source AI community.
-
-**Original project:** [github.com/FareedKhan-dev/kimi-k3-in-c](https://github.com/FareedKhan-dev/kimi-k3-in-c)
+To Fareed Khan: thank you for showing what's possible. 🙏
 
 ---
 
-## License
+## ⚖ License
 
-MIT License - see [LICENSE](LICENSE)
-
-**Author:** Abhirup Guha  
-**Organization:** Info Security Solution
+MIT License · Copyright © 2026 Abhirup Guha · Info Security Solution · Made in India 🇮🇳
