@@ -50,8 +50,16 @@ No API keys. No internet. No GPU. Just your terminal, an AI, and **~1 GB RAM**.
 
 **One command. That's it.**
 
+### Option 1: pip install (recommended)
+```bash
+pip install chakra-ai
+chakra
+```
+Installs the CLI. On first run, Chakra AI auto-downloads the model (~1 GB) and benchmarks your system.
+
+### Option 2: Full one-liner installer
 ```powershell
-# Windows PowerShell (Run as Administrator)
+# Windows PowerShell
 powershell -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/fir3storm/chakra-ai/main/install.ps1 | iex"
 ```
 
@@ -60,12 +68,7 @@ powershell -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.c
 curl -fsSL https://raw.githubusercontent.com/fir3storm/chakra-ai/main/setup.sh | bash
 ```
 
-After install, just type:
-```bash
-chakra
-```
-
-The installer handles everything — Python deps, C++ compilation, model download (~1 GB), system benchmark. Takes ~5 minutes.
+The full installer handles everything — Python deps, C++ compilation (llama.cpp), model download, system benchmark. Takes ~5 minutes. After install, type `chakra` to launch.
 
 > ⚡ **Speed:** On a standard laptop CPU, Chakra AI generates ~300 tokens/sec via llama.cpp with a GGUF-quantized model — code generation takes under 1 second.
 
