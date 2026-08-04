@@ -1,0 +1,27 @@
+# User Taste Profile
+- Prefers practical, resource-efficient solutions over theoretically ideal ones — chose lightweight 2.5GB local model (Option B) over full 93-layer MoE model for 8GB laptop. Confidence: 0.9
+- Favors incremental, staged rollouts: get something working now, plan full solution for later ("have option B as default, but keep Option A as future option, and plan"). Confidence: 0.85
+- Values offline-first architecture: 100% local execution, zero API keys, zero network calls is a core design principle. Confidence: 0.9
+- Uses an approval-gate workflow: reviews plans before implementation ("looks good, implement"). Confidence: 0.9
+- Expects seamless agent-to-agent handoffs with continuity — uses multiple AI agents and instructs new ones to "start where [previous agent] left abruptly". Confidence: 0.85
+- Appreciates honest technical assessments — transparent bug reports, honest evaluation of code quality, candid concern-flagging, and unflinching competitive comparisons over sugar-coating. Actively seeks out honest benchmarking against alternatives. Confidence: 0.85
+- Prefers structured, phased task breakdown with progress tracking (todo lists with status updates). Confidence: 0.8
+- Works in a Windows environment with batch scripts, Windows paths, and local hardware constraints. Confidence: 0.9
+- Builds agentic/multi-agent systems with sandboxed code execution and self-debugging loops. Confidence: 0.85
+- Security-focused: expects InfoSec auditing, OWASP vulnerability scanning, and static analysis baked into tooling. Confidence: 0.85
+- Prefers pytest for testing with comprehensive test coverage including mocks and edge cases. Confidence: 0.8
+- Project is "Chakra-AI" — an agentic coding platform built on a custom PyTorch Kimi K3 engine. Confidence: 0.9
+- Author attribution: "Abhirup Guha (Info Security Solution)". Confidence: 0.9
+- When issues are already identified, gives terse "fix the issues" instructions and expects the assistant to handle the full fix-and-verify cycle autonomously — no need to re-list problems or micromanage. Confidence: 0.75
+- Wants unified dual-purpose tools: explicitly wants a single system that combines agentic coding agent AND chat agent ("both in one"). Confidence: 0.9
+- Expects full autonomous multi-phase execution after plan approval — when a phased plan is approved, the assistant should complete all phases independently without asking for confirmation between steps. Confidence: 0.85
+- Values architectural consolidation and eliminating code debt — accepts and encourages replacing inline/duplicate code with proper module abstractions (sessions, personas, security auditing all consolidated in this session). Confidence: 0.85
+- Cares about production-grade verification frameworks: accepts adding gate ladder tests, integration tests, and numerical verification — values rigorous testing culture modeled after reference implementations. Confidence: 0.85
+- Expects thorough architecture planning before implementation: requests comprehensive plans with architecture diagrams, phased breakdowns, file change summaries, and implementation order. Confidence: 0.8
+- Benchmarks own projects against best-in-class open-source alternatives and expects honest gap analysis ("do you think chakra AI is better than this?"). Confidence: 0.85
+- When given a choice between targeted fixes and comprehensive solutions, always selects "all of them" — wants every identified gap closed in a single pass rather than picking individual items. Confidence: 0.9
+- After completing a phase, says terse "next?" and expects the assistant to proactively propose and present options for what to tackle next — doesn't want to micromanage direction. Confidence: 0.8
+- Reports bugs by pasting raw REPL/terminal output verbatim without describing the problem — expects the assistant to diagnose root cause from the output alone, without needing explicit instructions on what to fix. Confidence: 0.8
+- Wants real-time progress indicators during long-running operations — reports "it's stuck" when a process appears idle; expects status messages (e.g. "Generating code, please wait...") so the system never appears frozen. Confidence: 0.85
+- Prefers fast responsiveness over maximum output length — on CPU-constrained hardware, accepts shorter token budgets (e.g. 192 instead of 512) in exchange for quicker turnaround, values speed-to-result over completeness. Confidence: 0.8
+- Wants a clean terminal with no code blocks — code should be written directly to files silently; only show status updates and success/failure outcomes in the terminal. Explicitly forbids displaying generated code inline. Confidence: 0.9

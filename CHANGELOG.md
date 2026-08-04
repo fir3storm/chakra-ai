@@ -45,5 +45,5 @@ First public release.
 
 See [docs/ROADMAP.md](docs/ROADMAP.md).
 
-[Unreleased]: https://github.com/FareedKhan-dev/kimi-k3-in-c/compare/v0.1.0...HEAD
-[0.1.0]: https://github.com/FareedKhan-dev/kimi-k3-in-c/releases/tag/v0.1.0
+[Unreleased]: https://github.com/InfoSecuritySolution/KimiWin-Py/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/InfoSecuritySolution/KimiWin-Py/releases/tag/v0.1.0

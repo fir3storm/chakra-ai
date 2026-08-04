@@ -40,6 +40,10 @@ __pycache__/
 venv/
 .ruff_cache/
 .pytest_cache/
+.kimipy_sessions/
+.chakra_benchmark.json
+chakra_output/
+models/
 
 # editors / os
 .vscode/
