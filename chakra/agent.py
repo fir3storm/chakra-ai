@@ -36,6 +36,36 @@ def _diagnose_error(stderr: str) -> str:
     return None
 
 
+_LONG_RUNNING_LOOP_RE = re.compile(r"while\s+(True|1)\s*:")
+
+
+def is_long_running_script(code: str) -> bool:
+    """True if `code` looks intentionally long-running/never-exiting by design — e.g. a terminal
+    animation (`while True:` + `time.sleep(`) or a curses UI. Sandbox verification can't wait for
+    a script like this to "finish": hitting the timeout is the expected, correct outcome, not a
+    failure, and treating it as one wastes a full retry cycle on code that likely works fine."""
+    if not code or not _LONG_RUNNING_LOOP_RE.search(code):
+        return False
+    return "time.sleep(" in code or "curses" in code or "os.system('cls')" in code or 'os.system("cls")' in code
+
+
+def _headless_test_code(code: str) -> str:
+    """Returns a copy of `code` with GUI event loops (Tkinter's `mainloop()`) patched to a no-op,
+    for sandbox *verification only* — the original `code` (with a real `mainloop()`) is still
+    what gets saved/returned. Without this, verifying a GUI script means actually launching a
+    window and blocking until the sandbox timeout, every attempt, for every GUI request."""
+    if "tkinter" in code or "mainloop()" in code:
+        return (
+            "import sys\n"
+            "try:\n"
+            "    import tkinter\n"
+            "    tkinter.Tk.mainloop = lambda self: None\n"
+            "except Exception:\n"
+            "    pass\n"
+        ) + code
+    return code
+
+
 def verify_code(code: str) -> Dict[str, Any]:
     """
     Consolidates three independent checks into one structured diagnostic:
@@ -1024,8 +1054,28 @@ class KimiAgent:
 
                 verify_result = verify_code(code)
 
-                tmp_script.write_text(code, encoding="utf-8")
-                exec_res = self.run_in_sandbox(tmp_script)
+                tmp_script.write_text(_headless_test_code(code), encoding="utf-8")
+
+                long_running = is_long_running_script(code)
+                sandbox_timeout = 3 if long_running else 10
+                if progress_callback:
+                    progress_callback(attempt, 0, "Verifying in sandbox...")
+
+                exec_res = self.run_in_sandbox(tmp_script, timeout=sandbox_timeout)
+
+                if long_running and exec_res["timed_out"]:
+                    # Ran for the full timeout without exiting — for a script that's designed to
+                    # loop forever (an animation, a curses UI), that IS the expected "it works"
+                    # signal (a real crash exits before the timeout, it doesn't sit at it). Don't
+                    # burn a retry cycle "fixing" code that isn't broken. run_in_sandbox always
+                    # fills `stderr` with a synthetic "timed out" note on this path, not a real
+                    # traceback, so it isn't a signal of failure here.
+                    exec_res = {**exec_res, "success": True}
+                    exec_res["stdout"] = exec_res["stdout"] or (
+                        f"(long-running script — verified it starts and runs without error for "
+                        f"{sandbox_timeout}s before being stopped; run it yourself to see it in action)"
+                    )
+
                 last_exec_res = exec_res
 
                 attempts_history.append(

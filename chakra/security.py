@@ -16,6 +16,18 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 
+def _is_safe_constant_command(node: ast.AST) -> bool:
+    """True if `node` is compile-time-known and not attacker-influenceable: a plain string
+    constant, or a ternary between two string constants (e.g. `"cls" if os.name == "nt" else
+    "clear"`, the standard idiom for a cross-platform screen-clear). Anything else — an f-string,
+    concatenation with a variable, a function call — is flagged as usual."""
+    if isinstance(node, ast.Constant):
+        return True
+    if isinstance(node, ast.IfExp):
+        return isinstance(node.body, ast.Constant) and isinstance(node.orelse, ast.Constant)
+    return False
+
+
 class _SecurityASTVisitor(ast.NodeVisitor):
     """
     AST Visitor to detect OWASP security vulnerabilities in Python code.
@@ -142,7 +154,7 @@ class _SecurityASTVisitor(ast.NodeVisitor):
         if func_name in ("os.system", "os.popen"):
             if node.args:
                 arg0 = node.args[0]
-                if not isinstance(arg0, ast.Constant):
+                if not _is_safe_constant_command(arg0):
                     self._add_vuln(
                         rule_id="SEC-CMD-01",
                         vuln_type="Command Injection",

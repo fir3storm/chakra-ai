@@ -328,6 +328,151 @@ def parse_prompt(prompt_str: str) -> List[int]:
     return [ord(c) % 256 for c in prompt_str]
 
 
+def run_code_generation_task(
+    agent: "KimiAgent",
+    code_prompt: str,
+    gen_tokens: int,
+    incremental: bool = True,
+) -> Dict[str, Any]:
+    """
+    Runs the full agentic code-generation pipeline: language/filename detection, workspace
+    context injection, generation with self-debugging + sandbox verification (Python only),
+    and auto-save to chakra_output/. Shared by the REPL's natural-language code path and the
+    CLI's non-interactive --prompt mode, so both get the same real agentic behavior instead of
+    --prompt being a disconnected raw-completion debug path.
+
+    Returns dict: code, target_ext, target_lang, output_file (str), success (bool, execution).
+    """
+    # Inject workspace context
+    workspace_files = []
+    for f in Path.cwd().glob("*.py"):
+        if f.stat().st_size < 10000:
+            try:
+                f.read_text(encoding="utf-8")
+                workspace_files.append(f"{f.name}")
+            except Exception:
+                pass
+    ws_context = ""
+    if workspace_files:
+        ws_context = f"\nWorking directory: {Path.cwd()}\nExisting files: {', '.join(workspace_files)}\n"
+
+    # Detect target language/filename from user prompt. Specific language names (php, html, js,
+    # css) take priority over "sh"/"bash"/"shell" — the latter are generic words that also show
+    # up in unrelated phrases like "PHP shell" or "web shell", so they only apply when no more
+    # specific language was named anywhere in the prompt.
+    target_ext = ".py"
+    target_lang = "Python"
+    words = code_prompt.lower().replace(".", " ").replace(",", " ").split()
+    specific = {
+        "php": (".php", "PHP"),
+        ".php": (".php", "PHP"),
+        "html": (".html", "HTML"),
+        ".html": (".html", "HTML"),
+        "js": (".js", "JavaScript"),
+        "javascript": (".js", "JavaScript"),
+        ".js": (".js", "JavaScript"),
+        "css": (".css", "CSS"),
+        ".css": (".css", "CSS"),
+    }
+    generic_shell = {"sh", "bash", "shell", ".sh"}
+
+    for word in words:
+        if word in specific:
+            target_ext, target_lang = specific[word]
+            break
+    else:
+        for word in words:
+            if word in generic_shell:
+                target_ext, target_lang = ".sh", "Bash"
+                break
+
+    # Detect output filename from prompt
+    output_filename = None
+    for word in code_prompt.replace("=", " ").replace(":", " ").replace('"', ' ').replace("'", " ").split():
+        if "." in word and len(word) > 2 and word.count(".") == 1:
+            ext = word.split(".")[-1].lower()
+            if ext in ("py", "php", "html", "js", "css", "sh", "json", "yaml", "md", "txt", "bat", "ps1"):
+                output_filename = word
+                target_ext = f".{ext}"
+                target_lang = ext.upper()
+                break
+
+    # Clean prompt — detect and respect target language
+    if target_lang != "Python":
+        code_fence = f"```{target_ext[1:]}"
+        clean_code_prompt = f"You are a {target_lang} expert. Write a complete, production-ready {target_lang} file.\n\nRequest: {code_prompt}\n\nWorkspace: {ws_context}\n\nIMPORTANT: Start your response with {code_fence} and end with ```. Only output code inside the code fence."
+    else:
+        clean_code_prompt = (
+            f"Write a complete, production-ready Python application for the following request:\n"
+            f"{ws_context}{code_prompt}\n\n"
+            f"CRITICAL REQUIREMENTS:\n"
+            f"1. If the user asks for a GUI app (Tkinter/PyQt), write the COMPLETE runnable script including all event handlers, "
+            f"button callbacks, grid layout, styling, and `root.mainloop()` at the end so it opens a GUI window immediately when executed!\n"
+            f"2. If the user asks for a CLI tool (calculator, calendar, manager, etc.), build a FULLY INTERACTIVE REPL app with a main loop (`while True:`), "
+            f"interactive user input (`input(...)`), formatted menu, robust error handling, and clean output — DO NOT generate static hardcoded print statements!\n"
+            f"3. Always enclose the complete python code inside a ```python ... ``` code block."
+        )
+
+    code_gen_tokens = max(gen_tokens, 768)
+    pbar = ProgressBar(title=f"Building {target_lang} App", total_passes=4)
+
+    def progress_cb(current_pass: int, new_tokens: int, status: str):
+        pbar.update(current_pass=current_pass, new_tokens=new_tokens, status=status)
+
+    res = agent.run_agentic_loop(
+        prompt=clean_code_prompt,
+        max_retries=1 if target_ext != ".py" else 3,
+        gen_tokens=code_gen_tokens,
+        incremental=incremental,
+        progress_callback=progress_cb,
+    )
+    pbar.finish(message=f"Generated {len(res['code'].splitlines())} lines of code")
+
+    generated_code = res["code"]
+    result: Dict[str, Any] = {
+        "code": generated_code,
+        "target_ext": target_ext,
+        "target_lang": target_lang,
+        "output_file": None,
+        "executed": False,
+        "success": res.get("success", False),
+        "stdout": res.get("stdout", ""),
+        "stderr": res.get("stderr", ""),
+    }
+
+    # Auto-save with correct extension + skip execution for non-Python
+    try:
+        output_dir = Path("chakra_output")
+        output_dir.mkdir(exist_ok=True)
+        if output_filename:
+            code_file = output_dir / output_filename
+        else:
+            code_file = output_dir / f"generated_script{target_ext}"
+        code_file.write_text(generated_code, encoding="utf-8")
+        result["output_file"] = str(code_file)
+        print_tool("save", str(code_file), f"→ {len(generated_code.splitlines())} lines")
+
+        # Python was already verified inside run_agentic_loop's self_debug_loop (which handles
+        # GUI headless-testing and long-running/animation scripts correctly) — re-executing the
+        # real saved file here would be redundant AND regress those fixes (e.g. it would launch
+        # a real GUI window and block for the full timeout instead of the ~0.2s headless check).
+        # Reuse that already-verified result instead of running the code a second time.
+        if target_ext == ".py":
+            result["executed"] = True
+            if result["success"]:
+                print_tool("execute", "Sandbox execution", "→ Exit 0")
+                if result["stdout"].strip():
+                    print_chat_role("assistant", result["stdout"].strip())
+            else:
+                print_tool("error", "Sandbox execution failed", f"→ {result.get('stderr', '')[:80]}")
+        else:
+            print_tool("info", f"{target_lang} file saved (no execution)")
+    except Exception as err:
+        print_tool("error", f"Failed: {err}")
+
+    return result
+
+
 def run_repl(
     model: Any,
     tokenizer: KimiTokenizer,
@@ -959,108 +1104,9 @@ def run_repl(
                 print_step("AGENT", "Usage: /code <python task prompt>", "WARN")
                 continue
 
-            # Inject workspace context
-            workspace_files = []
-            for f in Path.cwd().glob("*.py"):
-                if f.stat().st_size < 10000:
-                    try:
-                        f.read_text(encoding="utf-8")
-                        workspace_files.append(f"{f.name}")
-                    except Exception:
-                        pass
-            ws_context = ""
-            if workspace_files:
-                ws_context = f"\nWorking directory: {Path.cwd()}\nExisting files: {', '.join(workspace_files)}\n"
-
-            # Detect target language/filename from user prompt
-            target_ext = ".py"
-            target_lang = "Python"
-            for word in code_prompt.lower().replace(".", " ").replace(",", " ").split():
-                if word in ("php", ".php"):
-                    target_ext = ".php"
-                    target_lang = "PHP"
-                elif word in ("html", ".html"):
-                    target_ext = ".html"
-                    target_lang = "HTML"
-                elif word in ("js", "javascript", ".js"):
-                    target_ext = ".js"
-                    target_lang = "JavaScript"
-                elif word in ("css", ".css"):
-                    target_ext = ".css"
-                    target_lang = "CSS"
-                elif word in ("sh", "bash", "shell", ".sh"):
-                    target_ext = ".sh"
-                    target_lang = "Bash"
-
-            # Detect output filename from prompt
-            output_filename = None
-            for word in code_prompt.replace("=", " ").replace(":", " ").replace('"', ' ').replace("'", " ").split():
-                if "." in word and len(word) > 2 and word.count(".") == 1:
-                    ext = word.split(".")[-1].lower()
-                    if ext in ("py", "php", "html", "js", "css", "sh", "json", "yaml", "md", "txt", "bat", "ps1"):
-                        output_filename = word
-                        target_ext = f".{ext}"
-                        target_lang = ext.upper()
-                        break
-
-            # Clean prompt — detect and respect target language
-            if target_lang != "Python":
-                code_fence = f"```{target_ext[1:]}"
-                clean_code_prompt = f"You are a {target_lang} expert. Write a complete, production-ready {target_lang} file.\n\nRequest: {code_prompt}\n\nWorkspace: {ws_context}\n\nIMPORTANT: Start your response with {code_fence} and end with ```. Only output code inside the code fence."
-            else:
-                clean_code_prompt = (
-                    f"Write a complete, production-ready Python application for the following request:\n"
-                    f"{ws_context}{code_prompt}\n\n"
-                    f"CRITICAL REQUIREMENTS:\n"
-                    f"1. If the user asks for a GUI app (Tkinter/PyQt), write the COMPLETE runnable script including all event handlers, "
-                    f"button callbacks, grid layout, styling, and `root.mainloop()` at the end so it opens a GUI window immediately when executed!\n"
-                    f"2. If the user asks for a CLI tool (calculator, calendar, manager, etc.), build a FULLY INTERACTIVE REPL app with a main loop (`while True:`), "
-                    f"interactive user input (`input(...)`), formatted menu, robust error handling, and clean output — DO NOT generate static hardcoded print statements!\n"
-                    f"3. Always enclose the complete python code inside a ```python ... ``` code block."
-                )
-
-            code_gen_tokens = max(gen_tokens, 768)
-            pbar = ProgressBar(title=f"Building {target_lang} App", total_passes=4)
-
-            def progress_cb(current_pass: int, new_tokens: int, status: str):
-                pbar.update(current_pass=current_pass, new_tokens=new_tokens, status=status)
-
-            res = agent.run_agentic_loop(
-                prompt=clean_code_prompt,
-                max_retries=1 if target_ext != ".py" else 3,
-                gen_tokens=code_gen_tokens,
-                incremental=incremental,
-                progress_callback=progress_cb,
-            )
-            pbar.finish(message=f"Generated {len(res['code'].splitlines())} lines of code")
-
+            result = run_code_generation_task(agent, code_prompt, gen_tokens, incremental)
             previous_code = last_code
-            last_code = res["code"]
-
-            # Auto-save with correct extension + skip execution for non-Python
-            try:
-                output_dir = Path("chakra_output")
-                output_dir.mkdir(exist_ok=True)
-                if output_filename:
-                    code_file = output_dir / output_filename
-                else:
-                    code_file = output_dir / f"generated_script{target_ext}"
-                code_file.write_text(last_code, encoding="utf-8")
-                print_tool("save", str(code_file), f"→ {len(last_code.splitlines())} lines")
-
-                # Only sandbox execute Python files
-                if target_ext == ".py":
-                    exec_res = agent.run_in_sandbox(code_file, timeout=30)
-                    if exec_res["success"]:
-                        print_tool("execute", "Sandbox execution", "→ Exit 0")
-                        if exec_res["stdout"].strip():
-                            print_chat_role("assistant", exec_res["stdout"].strip())
-                    else:
-                        print_tool("error", "Sandbox execution failed", f"→ {exec_res.get('stderr', '')[:80]}")
-                else:
-                    print_tool("info", f"{target_lang} file saved (no execution)")
-            except Exception as err:
-                print_tool("error", f"Failed: {err}")
+            last_code = result["code"]
         else:
             # Chat mode with streaming when available
             has_stream = (
@@ -1308,51 +1354,33 @@ def main(args: Optional[List[str]] = None) -> int:
         )
         return 0
 
-    # Single Prompt Mode execution
+    # Single Prompt Mode execution — routes through the SAME agentic pipeline as the REPL's
+    # natural-language code path (generation, self-debugging, sandbox verification, file save),
+    # not a disconnected raw-completion debug path, so `chakra --prompt "..."` behaves like a
+    # real non-interactive invocation of the agent (scriptable: exit code reflects success).
     prompt_str = parsed.prompt
 
-    print_step("PROMPT", f"Input: '{prompt_str}'", "INFO")
-    print_step("GENERATE", f"Generating {parsed.gen} tokens...", "WAIT")
+    task_keywords = {
+        "create ", "make ", "write ", "build ", "generate ",
+        "calculator", "calendar", "scanner ", "hash ", "folder ", "directory ",
+        "function ", "class ", "module ", "api ", "app ", "refactor ",
+    }
+    is_code_task = any(k in prompt_str.lower() for k in task_keywords)
 
-    # Route through LocalModelRunner's native tokenizer when available
-    if isinstance(model, LocalModelRunner):
-        t0 = time.time()
-        decoded_text = model.generate(prompt_str, n_new=parsed.gen)
-        el = time.time() - t0
-        print_step("RESULT", f"Output:\n{decoded_text}", "SUCCESS")
-        print_step("BENCH", f"Completed in {el:.3f} s", "INFO")
+    print_step("PROMPT", f"Input: '{prompt_str}'", "INFO")
+
+    if is_code_task:
+        result = run_code_generation_task(agent, prompt_str, parsed.gen, parsed.incremental)
+        if result["executed"]:
+            return 0 if result["success"] else 1
         return 0
 
-    # Fallback: use KimiTokenizer + tensor path for K3Model/tiny
-    if any(c.isalpha() for c in prompt_str):
-        prompt_ids = tokenizer.encode(prompt_str)
-    else:
-        prompt_ids = parse_prompt(prompt_str)
-
-    input_tensor = torch.tensor([prompt_ids], dtype=torch.long, device=parsed.device)
-
-    print_step("PROMPT", f"Tokens: {prompt_ids}", "INFO")
-
+    print_step("GENERATE", f"Generating {parsed.gen} tokens...", "WAIT")
     t0 = time.time()
-    with torch.no_grad():
-        output_ids = model.generate(
-            input_tensor,
-            n_new=parsed.gen,
-            incremental=parsed.incremental,
-        )
+    reply = agent.chat(prompt_str, gen_tokens=parsed.gen, incremental=parsed.incremental)
     el = time.time() - t0
-
-    generated_tokens = output_ids[0].tolist()
-    new_tokens = generated_tokens[len(prompt_ids) :]
-    decoded_text = tokenizer.decode(new_tokens)
-    safe_decoded = decoded_text.encode("ascii", errors="backslashreplace").decode("ascii")
-
-    print_step("RESULT", f"Full Sequence: {generated_tokens}", "INFO")
-    print_step("RESULT", f"New Tokens: {new_tokens}", "INFO")
-    out_repr = repr(decoded_text) if sys.stdout.encoding and sys.stdout.encoding.lower() == 'utf-8' else repr(safe_decoded)
-    print_step("RESULT", f"Decoded Text: {out_repr}", "SUCCESS")
-    print_step("BENCH", f"Completed in {el:.3f} s ({parsed.gen / max(el, 1e-9):.2f} tokens/s)", "INFO")
-
+    print_step("RESULT", f"Output:\n{reply}", "SUCCESS")
+    print_step("BENCH", f"Completed in {el:.3f} s", "INFO")
     return 0
 
 

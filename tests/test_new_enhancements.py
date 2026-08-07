@@ -17,7 +17,7 @@ import pytest
 from chakra.security import InfoSecAuditor
 from chakra.agent import KimiAgent
 from chakra.workspace import WorkspaceIndexer, SymbolGraph, scan_ast_symbols
-from chakra.cli import main
+from chakra.cli import main, run_code_generation_task
 
 
 def test_security_auto_remediation():
@@ -157,6 +157,111 @@ def test_grammar_constrained_choice_and_json():
     # Empty choices / no schema should fail closed, not raise.
     assert backend.generate_choice(prompt="x", choices=[]) == ""
     assert backend.generate_json(prompt="x", schema=None) is None
+
+
+def test_os_system_ternary_of_constants_not_flagged():
+    """A hardcoded cross-platform screen-clear (`os.system("cls" if os.name == "nt" else
+    "clear")`) is not attacker-influenceable and shouldn't be flagged as command injection —
+    this is the standard idiom terminal animations use."""
+    auditor = InfoSecAuditor()
+    code = 'import os\nos.system("cls" if os.name == "nt" else "clear")\n'
+    result = auditor.audit_code(code)
+    cmd_vulns = [v for v in result.get("vulnerabilities", []) if v.get("rule_id") == "SEC-CMD-01"]
+    assert cmd_vulns == []
+
+
+def test_os_system_dynamic_arg_still_flagged():
+    """A dynamic/variable command argument to os.system is still real command injection risk
+    and must still be flagged — only the constant-ternary idiom got the exemption."""
+    auditor = InfoSecAuditor()
+    code = "import os\ndef run(cmd):\n    os.system(cmd)\n"
+    result = auditor.audit_code(code)
+    cmd_vulns = [v for v in result.get("vulnerabilities", []) if v.get("rule_id") == "SEC-CMD-01"]
+    assert len(cmd_vulns) == 1
+
+
+def test_is_long_running_script_detection():
+    from chakra.agent import is_long_running_script
+
+    animation = "import time\nwhile True:\n    print('.')\n    time.sleep(0.1)\n"
+    assert is_long_running_script(animation) is True
+
+    normal_script = "def add(a, b):\n    return a + b\nprint(add(1, 2))\n"
+    assert is_long_running_script(normal_script) is False
+
+    # A `while True:` with no sleep/curses/cls isn't confidently "intentional" — likely just a
+    # bug, so it should NOT get the long-running exemption (still treated as a real failure).
+    bare_infinite_loop = "while True:\n    x = 1\n"
+    assert is_long_running_script(bare_infinite_loop) is False
+
+
+def test_self_debug_loop_long_running_script_soft_succeeds():
+    """A verified-working animation script (infinite loop + time.sleep) should be treated as a
+    success on the first attempt once it survives the (shortened) sandbox timeout cleanly,
+    instead of being retried up to max_retries as if it were broken."""
+    import time as _time
+
+    bird_code = (
+        "```python\n"
+        "import time\n"
+        "def main():\n"
+        "    x = 0\n"
+        "    while True:\n"
+        "        print('>=>' + ' ' * x)\n"
+        "        x = (x + 1) % 10\n"
+        "        time.sleep(0.1)\n"
+        "if __name__ == '__main__':\n"
+        "    main()\n"
+        "```"
+    )
+
+    class OneShotModel:
+        def __call__(self, prompt):
+            return bird_code
+
+        def generate(self, prompt, n_new=512, system=""):
+            return bird_code
+
+    agent = KimiAgent(model=OneShotModel())
+    t0 = _time.time()
+    res = agent.run_agentic_loop("make an ascii animation that never stops", max_retries=3, gen_tokens=64)
+    elapsed = _time.time() - t0
+
+    assert res["success"] is True
+    assert res["attempts"] == 1
+    # Shortened (3s) timeout for detected long-running scripts, not the default 10s x 3 retries.
+    assert elapsed < 8
+
+
+def test_run_code_generation_task_does_not_reexecute_verified_code(tmp_path, monkeypatch):
+    """run_code_generation_task must trust the success/stdout/stderr that run_agentic_loop
+    already produced (self_debug_loop verifies GUI apps headlessly and long-running scripts
+    correctly) rather than re-running the real saved file a second time — re-running would
+    launch a real Tkinter window and block for the full sandbox timeout, undoing that fix."""
+    from unittest.mock import MagicMock
+    import time as _time
+
+    monkeypatch.chdir(tmp_path)
+
+    gui_code = (
+        "import tkinter as tk\n"
+        "root = tk.Tk()\n"
+        "root.mainloop()\n"
+    )
+    agent = MagicMock()
+    agent.run_agentic_loop.return_value = {
+        "success": True, "code": gui_code, "stdout": "", "stderr": "",
+        "attempts": 1, "iterations": 1, "history": [],
+    }
+
+    t0 = _time.time()
+    result = run_code_generation_task(agent, "make a gui app", gen_tokens=64)
+    elapsed = _time.time() - t0
+
+    assert elapsed < 2, f"took {elapsed}s — looks like the code got re-executed for real"
+    agent.run_in_sandbox.assert_not_called()
+    assert result["executed"] is True
+    assert result["success"] is True
 
 
 def test_tool_registry_and_search_replace():
