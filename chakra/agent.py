@@ -5,13 +5,16 @@ Author & Creator: Abhirup Guha (Info Security Solution)
 """
 from __future__ import annotations
 
+import ast
 import os
 import re
 import subprocess
 import sys
 import tempfile
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
+
+from chakra.security import InfoSecAuditor
 
 
 def _diagnose_error(stderr: str) -> str:
@@ -31,6 +34,152 @@ def _diagnose_error(stderr: str) -> str:
     if "IndexError" in stderr or "KeyError" in stderr:
         return f"Invalid index or key. Check bounds before accessing.\nError: {stderr[:200]}"
     return None
+
+
+def verify_code(code: str) -> Dict[str, Any]:
+    """
+    Consolidates three independent checks into one structured diagnostic:
+    1. ast.parse — catches SyntaxError (with line number).
+    2. compile(..., mode='exec') — catches semantic/bytecode compile errors
+       (e.g. 'return' outside function) that ast.parse alone would miss.
+    3. InfoSecAuditor().audit_code — catches OWASP-style security issues.
+
+    This function never raises; every check is individually guarded.
+
+    Returns:
+        Dict with keys: ok, syntax_error, syntax_line, security_issues,
+        has_critical_security. `ok` is True only when the code parses/compiles
+        cleanly AND has no HIGH-severity security finding.
+    """
+    result: Dict[str, Any] = {
+        "ok": False,
+        "syntax_error": None,
+        "syntax_line": None,
+        "security_issues": [],
+        "has_critical_security": False,
+    }
+
+    syntax_ok = False
+    try:
+        ast.parse(code)
+        syntax_ok = True
+    except SyntaxError as se:
+        result["syntax_error"] = str(se.msg) if se.msg else str(se)
+        result["syntax_line"] = se.lineno
+    except Exception as e:
+        result["syntax_error"] = str(e)
+
+    if syntax_ok:
+        try:
+            compile(code, "<verify_code>", "exec")
+        except SyntaxError as se:
+            syntax_ok = False
+            result["syntax_error"] = str(se.msg) if se.msg else str(se)
+            result["syntax_line"] = se.lineno
+        except Exception as e:
+            syntax_ok = False
+            result["syntax_error"] = str(e)
+
+    try:
+        audit = InfoSecAuditor().audit_code(code)
+        issues = audit.get("vulnerabilities", []) or []
+        result["security_issues"] = issues
+        result["has_critical_security"] = any(v.get("severity") == "HIGH" for v in issues)
+    except Exception:
+        # A broken audit should not silently count as "secure" nor crash verify_code.
+        result["security_issues"] = []
+        result["has_critical_security"] = False
+
+    result["ok"] = syntax_ok and not result["has_critical_security"]
+    return result
+
+
+# Exception categories from _diagnose_error that name a specific, patchable
+# line/attribute/type — as opposed to structural/unparseable failures.
+_LOCALIZED_ERROR_MARKERS: Tuple[str, ...] = (
+    "ImportError",
+    "ModuleNotFoundError",
+    "AttributeError",
+    "TypeError",
+    "IndexError",
+    "KeyError",
+)
+
+_ERROR_LINE_RE = re.compile(r"line (\d+)")
+
+_SEARCH_REPLACE_RE = re.compile(
+    r"<{3,}\s*SEARCH\s*\n(.*?)\n={3,}\s*\n(.*?)\n>{3,}\s*REPLACE",
+    re.DOTALL,
+)
+
+
+def _is_localized_diagnosis(stderr: str, verify_result: Optional[Dict[str, Any]] = None) -> bool:
+    """
+    True when the failure names a specific, targetable line/attribute/type
+    (one of the _LOCALIZED_ERROR_MARKERS categories in stderr, or a syntax
+    error with a known line number from verify_code) rather than a structural,
+    unparseable failure that needs a full rewrite.
+    """
+    if verify_result and verify_result.get("syntax_line") is not None:
+        return True
+    if not stderr:
+        return False
+    return any(marker in stderr for marker in _LOCALIZED_ERROR_MARKERS)
+
+
+def _extract_error_line(stderr: str) -> Optional[int]:
+    """Best-effort extraction of a 'line N' reference from a traceback string."""
+    if not stderr:
+        return None
+    match = _ERROR_LINE_RE.search(stderr)
+    if match:
+        try:
+            return int(match.group(1))
+        except ValueError:
+            return None
+    return None
+
+
+def _build_patch_prompt(code: str, stderr: str, verify_result: Dict[str, Any]) -> str:
+    """
+    Builds a minimal prompt asking the model for a targeted SEARCH/REPLACE
+    patch (instead of a full rewrite) for a localized failure.
+    """
+    line = verify_result.get("syntax_line") or _extract_error_line(stderr)
+    line_str = str(line) if line else "unknown"
+    error_snippet = (stderr or verify_result.get("syntax_error") or "Unknown error").strip()[:400]
+
+    return (
+        f"The following code failed with this error on line {line_str}:\n"
+        f"```\n{error_snippet}\n```\n\n"
+        f"Current code:\n```python\n{code}\n```\n\n"
+        f"Output ONLY a SEARCH/REPLACE block that fixes this error. Use EXACTLY this format "
+        f"and nothing else (no explanation):\n"
+        f"<<<<<<< SEARCH\n"
+        f"<the exact original lines to replace>\n"
+        f"=======\n"
+        f"<the corrected replacement lines>\n"
+        f">>>>>>> REPLACE"
+    )
+
+
+def _parse_search_replace_block(text: str) -> Tuple[Optional[str], Optional[str]]:
+    """
+    Extracts (search_block, replace_block) from a model response formatted with
+    <<<<<<< SEARCH / ======= / >>>>>>> REPLACE markers. Returns (None, None) if
+    the model did not follow the format — callers should treat that as "no match"
+    and fall through to full regeneration.
+    """
+    if not text:
+        return None, None
+    match = _SEARCH_REPLACE_RE.search(text)
+    if not match:
+        return None, None
+    search_block = match.group(1)
+    replace_block = match.group(2)
+    if not search_block.strip():
+        return None, None
+    return search_block, replace_block
 
 
 class LocalModelRunner:
@@ -831,6 +980,9 @@ class KimiAgent:
             "stderr": "",
             "exit_code": -1,
         }
+        # When True, current_prompt is asking the model for a targeted
+        # SEARCH/REPLACE patch (against `last_code`) instead of a full rewrite.
+        patch_mode = False
 
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp_script = Path(tmp_dir) / "temp_agent_code.py"
@@ -844,12 +996,33 @@ class KimiAgent:
                     progress_callback=progress_callback,
                 )
 
-                code = self.sanitize_and_synthesize_code(model_resp, task_prompt)
+                patch_applied = False
+                if patch_mode and last_code:
+                    search_block, replace_block = _parse_search_replace_block(model_resp)
+                    if search_block is not None:
+                        patched_code, applied = apply_search_replace_block(
+                            last_code, search_block, replace_block or ""
+                        )
+                        if applied:
+                            code = patched_code
+                            patch_applied = True
+                        else:
+                            # No match found — fall back to today's full-regeneration handling.
+                            code = self.sanitize_and_synthesize_code(model_resp, task_prompt)
+                    else:
+                        # Model didn't follow the SEARCH/REPLACE format — same fallback.
+                        code = self.sanitize_and_synthesize_code(model_resp, task_prompt)
+                else:
+                    code = self.sanitize_and_synthesize_code(model_resp, task_prompt)
+                patch_mode = False
+
                 self.last_code = code
                 last_code = code
                 # Track the best (longest) code across retries
                 if len(code) > len(best_code):
                     best_code = code
+
+                verify_result = verify_code(code)
 
                 tmp_script.write_text(code, encoding="utf-8")
                 exec_res = self.run_in_sandbox(tmp_script)
@@ -862,10 +1035,12 @@ class KimiAgent:
                         "response": model_resp,
                         "code": code,
                         "exec_result": exec_res,
+                        "verify_result": verify_result,
+                        "patch_applied": patch_applied,
                     }
                 )
 
-                if exec_res["success"]:
+                if exec_res["success"] and verify_result["ok"]:
                     if output_path is not None:
                         self.save_file(output_path, code)
                     return {
@@ -878,11 +1053,25 @@ class KimiAgent:
                         "history": attempts_history,
                     }
 
-                truncated_err = exec_res['stderr'][:500] if exec_res['stderr'] else "Unknown error"
-                diagnosis = _diagnose_error(exec_res.get("stderr", ""))
+                stderr = exec_res.get("stderr", "")
+                truncated_err = stderr[:500] if stderr else "Unknown error"
+                diagnosis = _diagnose_error(stderr)
                 if diagnosis:
                     truncated_err = diagnosis
-                if attempt >= 2:
+                elif not stderr and verify_result.get("security_issues"):
+                    sec_lines = "; ".join(
+                        f"[{v.get('severity')}] line {v.get('line')}: {v.get('type')}"
+                        for v in verify_result["security_issues"][:5]
+                    )
+                    truncated_err = f"Security audit flagged issues: {sec_lines}"
+
+                localized = _is_localized_diagnosis(stderr, verify_result)
+
+                if attempt >= 2 and localized and last_code:
+                    # Targeted patch: ask for a SEARCH/REPLACE block instead of a full rewrite.
+                    current_prompt = _build_patch_prompt(last_code, stderr, verify_result)
+                    patch_mode = True
+                elif attempt >= 2:
                     # Summarize: keep only original prompt + latest error
                     current_prompt = (
                         f"Write a complete, runnable Python script for the following request:\n"

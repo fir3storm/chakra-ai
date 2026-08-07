@@ -20,6 +20,13 @@ from chakra.agent import KimiAgent
 from chakra.security import InfoSecAuditor
 
 
+def _is_grammar_backend(model: Optional[Any]) -> bool:
+    """True if `model` supports the grammar-constrained ToolLoop protocol (chakra.tools),
+    i.e. it's an engine C / llama.cpp LlamaCppBackend. Other backends (engines A/B, or no
+    model) fall back to the existing single-shot chat-based generation below."""
+    return hasattr(model, "generate_choice") and hasattr(model, "generate_json")
+
+
 class ArchitectAgent:
     """
     ArchitectAgent: High-level system architect responsible for blueprint design
@@ -44,13 +51,18 @@ class ArchitectAgent:
         self.tokenizer = tokenizer
         self.device = device
         self.kimi_agent = KimiAgent(model=model, tokenizer=tokenizer, device=device)
+        self.tool_call_log: List[Dict[str, Any]] = []
 
-    def plan_blueprint(self, prompt: str) -> Dict[str, Any]:
+    def plan_blueprint(self, prompt: str, workspace_root: Optional[str] = None) -> Dict[str, Any]:
         """
         Decomposes a user software request into a modular architectural blueprint.
 
         Args:
             prompt: User description of the software system to build.
+            workspace_root: Optional existing project directory the Architect may inspect (via
+                read-only list_dir/search_symbols/read_file tools) before proposing modules.
+                Defaults to the current working directory. Only used when the backend supports
+                grammar-constrained tool calling (engine C / llama.cpp).
 
         Returns:
             Dict containing project_name, architecture_summary, and list of module_spec dicts.
@@ -58,26 +70,63 @@ class ArchitectAgent:
         if not prompt or not prompt.strip():
             prompt = "Modular Python Utility System"
 
-        # Attempt model-driven planning if model is available
-        if self.model is not None:
-            architect_prompt = (
-                f"Design a modular Python architecture for the following project request:\n"
-                f"'{prompt}'\n"
-                f"Return JSON format with fields: 'project_name', 'architecture_summary', 'modules' (list of module specs)."
-            )
+        architect_prompt = (
+            f"Design a modular Python architecture for the following project request:\n"
+            f"'{prompt}'\n"
+            f"Return JSON format with fields: 'project_name', 'architecture_summary', 'modules' (list of module specs)."
+        )
+
+        # Tool-driven planning: the Architect can inspect the existing workspace (file tree,
+        # symbols, file contents) before proposing modules, instead of planning blind.
+        if _is_grammar_backend(self.model):
             try:
-                model_output = self.kimi_agent.chat(architect_prompt)
-                # Try parsing JSON from model output
-                json_match = re.search(r"\{.*\}", model_output, re.DOTALL)
-                if json_match:
-                    parsed = json.loads(json_match.group(0))
-                    if isinstance(parsed, dict) and "modules" in parsed and isinstance(parsed["modules"], list):
-                        return parsed
+                from chakra.tools import build_default_tools, ToolLoop
+
+                registry = build_default_tools(
+                    workspace_root=workspace_root, kimi_agent=self.kimi_agent
+                ).subset(["list_dir", "search_symbols", "read_file"])
+                tool_loop = ToolLoop(
+                    self.model,
+                    registry,
+                    system_prompt="You are a software architect. Inspect the existing workspace "
+                                  "with tools if it helps, then design a modular architecture.",
+                    max_steps=4,
+                )
+                tool_result = tool_loop.run(architect_prompt)
+                for tc in tool_result.get("tool_calls", []):
+                    self.tool_call_log.append({"role": "Architect", **tc})
+                parsed = self._parse_blueprint(tool_result["final_answer"])
+                if parsed is not None:
+                    return parsed
             except Exception:
                 pass
 
-        # Robust, offline fallback blueprint synthesis tailored to prompt keywords
+        # Single-shot model-driven planning (non-grammar backends, e.g. engines A/B)
+        if self.model is not None:
+            try:
+                parsed = self._parse_blueprint(self.kimi_agent.chat(architect_prompt))
+                if parsed is not None:
+                    return parsed
+            except Exception:
+                pass
+
+        # Last resort — reached only when neither the tool-driven nor single-shot attempt above
+        # produced a usable blueprint (in particular, always reached when no model is loaded).
         return self._synthesize_fallback_blueprint(prompt)
+
+    def _parse_blueprint(self, model_output: str) -> Optional[Dict[str, Any]]:
+        """Extracts a well-formed {'modules': [...]} blueprint dict from free-text model output,
+        or returns None if no valid blueprint JSON is present."""
+        json_match = re.search(r"\{.*\}", model_output, re.DOTALL)
+        if not json_match:
+            return None
+        try:
+            parsed = json.loads(json_match.group(0))
+        except Exception:
+            return None
+        if isinstance(parsed, dict) and "modules" in parsed and isinstance(parsed["modules"], list):
+            return parsed
+        return None
 
     def _synthesize_fallback_blueprint(self, prompt: str) -> Dict[str, Any]:
         """
@@ -344,12 +393,14 @@ class CoderAgent:
         self.tokenizer = tokenizer
         self.device = device
         self.kimi_agent = kimi_agent or agent or KimiAgent(model=model, tokenizer=tokenizer, device=device)
+        self.tool_call_log: List[Dict[str, Any]] = []
 
     def generate_module(
         self,
         module_spec: Dict[str, Any],
         context_modules: Optional[Dict[str, str]] = None,
         feedback: Optional[str] = None,
+        workspace_root: Optional[str] = None,
     ) -> str:
         """
         Generates functional Python source code for a given module specification.
@@ -358,6 +409,11 @@ class CoderAgent:
             module_spec: Dict containing module_name, filename, purpose, specifications, interface, dependencies.
             context_modules: Dict of previously generated filename -> code content.
             feedback: Optional error message or audit feedback for code correction/retry.
+            workspace_root: Optional workspace directory where sibling modules already live on
+                disk. When set and the backend supports grammar-constrained tool calling (engine
+                C / llama.cpp), the Coder can read_file dependency modules directly, run_python
+                to self-check snippets, and — on a retry with `feedback` — edit_file a targeted
+                patch into the existing file instead of regenerating it whole.
 
         Returns:
             Python source code string.
@@ -387,18 +443,66 @@ class CoderAgent:
         if feedback:
             prompt += f"\nPrevious attempt had issues/errors: {feedback}\nPlease fix these issues in the code."
 
-        # If model is present and capable, try model-driven generation
-        if self.model is not None and callable(self.model):
+        # Tool-driven generation: read dependency files straight off disk, self-check snippets in
+        # the sandbox, and on a retry patch the existing file with edit_file instead of a full
+        # rewrite (the same "targeted patch over full regen" win as agent.py's self_debug_loop).
+        if _is_grammar_backend(self.model) and workspace_root is not None:
             try:
-                raw_response = self.kimi_agent.chat(prompt)
-                extracted_code = self.kimi_agent.extract_code(raw_response)
-                # Verify syntax
+                from chakra.tools import build_default_tools, ToolLoop
+
+                registry = build_default_tools(
+                    workspace_root=workspace_root, kimi_agent=self.kimi_agent
+                ).subset(["read_file", "run_python", "edit_file"])
+                tool_loop = ToolLoop(
+                    self.model,
+                    registry,
+                    system_prompt="You are a Python developer. Use read_file to check dependency "
+                                  "modules and run_python to self-check snippets before finalizing.",
+                    max_steps=5,
+                )
+
+                target_exists = (Path(workspace_root) / filename).exists()
+                forced_first_call = None
+                if feedback and target_exists:
+                    task = (
+                        f"The file '{filename}' failed with this issue:\n{feedback}\n"
+                        f"Its current contents are shown below (from read_file). Use edit_file "
+                        f"with a `search` value copied EXACTLY from that content to patch just "
+                        f"the broken part — do not rewrite the whole file. After patching, use "
+                        f"read_file again to confirm, then give the complete corrected Python "
+                        f"source as your final answer in a ```python fenced block."
+                    )
+                    # Reading the file first is always necessary here, and a small model's
+                    # CALL_TOOL/FINAL_ANSWER guess is unreliable on this exact step (see
+                    # ToolLoop.run docstring) — so do it deterministically instead of asking.
+                    forced_first_call = {"tool": "read_file", "args": {"path": filename}}
+                else:
+                    task = prompt + (
+                        "\nIf you need to check a dependency module's interface, use read_file. "
+                        "Give your final answer as the complete Python source in a ```python fenced block."
+                    )
+
+                tool_result = tool_loop.run(task, forced_first_call=forced_first_call)
+                for tc in tool_result.get("tool_calls", []):
+                    self.tool_call_log.append({"role": "Coder", **tc})
+                extracted_code = self.kimi_agent.extract_code(tool_result["final_answer"])
                 ast.parse(extracted_code)
                 return extracted_code
             except Exception:
                 pass
 
-        # Offline synthesized code generator tailored to module_spec
+        # Single-shot model-driven generation (non-grammar backends, e.g. engines A/B)
+        if self.model is not None and callable(self.model):
+            try:
+                raw_response = self.kimi_agent.chat(prompt)
+                extracted_code = self.kimi_agent.extract_code(raw_response)
+                ast.parse(extracted_code)
+                return extracted_code
+            except Exception:
+                pass
+
+        # Last resort — reached only when neither the tool-driven nor single-shot attempt above
+        # produced syntactically valid code (in particular, always reached when no model is loaded).
         return self._synthesize_module_code(module_spec, context_modules, feedback)
 
     def _synthesize_module_code(
@@ -846,6 +950,10 @@ class MultiAgentOrchestrator:
             Dict containing overall success status, blueprint, generated modules code map,
             audit reports, project output directory, and execution history.
         """
+        # Reset per-run tool-call trace (cli.py surfaces this after the run completes)
+        self.architect.tool_call_log = []
+        self.coder.tool_call_log = []
+
         # Step 1: Architectural Planning
         blueprint = self.architect.plan_blueprint(prompt)
 
@@ -876,6 +984,7 @@ class MultiAgentOrchestrator:
                     module_spec=spec,
                     context_modules=modules_code,
                     feedback=feedback,
+                    workspace_root=str(workspace),
                 )
                 final_code = code
 

@@ -133,6 +133,32 @@ def test_turbo_llama_backend():
         assert grammar is not None
 
 
+def test_grammar_constrained_choice_and_json():
+    """generate_choice/generate_json back the tool-calling loop in chakra.tools.ToolLoop —
+    when a real GGUF model is loaded, output must be grammar-valid every time."""
+    from chakra.engine_llama import LlamaCppBackend
+    backend = LlamaCppBackend()
+    if not backend.loaded:
+        return
+
+    choice = backend.generate_choice(prompt="Pick one.", choices=["CALL_TOOL", "FINAL_ANSWER"])
+    assert choice in ("CALL_TOOL", "FINAL_ANSWER")
+
+    schema = {
+        "type": "object",
+        "properties": {"tool": {"enum": ["read_file", "write_file"]}, "args": {"type": "object"}},
+        "required": ["tool", "args"],
+    }
+    result = backend.generate_json(prompt="Call read_file on agent.py", schema=schema)
+    assert result is not None
+    assert result["tool"] in ("read_file", "write_file")
+    assert isinstance(result["args"], dict)
+
+    # Empty choices / no schema should fail closed, not raise.
+    assert backend.generate_choice(prompt="x", choices=[]) == ""
+    assert backend.generate_json(prompt="x", schema=None) is None
+
+
 def test_tool_registry_and_search_replace():
     from chakra.agent import ToolRegistry, apply_search_replace_block
 

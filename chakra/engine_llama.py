@@ -140,6 +140,137 @@ class LlamaCppBackend:
                 print(f"[WARN] llama.cpp failed to load model: {ex}")
                 self.loaded = False
 
+    def _build_messages(
+        self, prompt: Optional[str], system: str, messages: Optional[list]
+    ) -> list:
+        """Returns a chat messages list: `messages` verbatim if given (multi-turn conversation),
+        otherwise a fresh single-turn [system?, user] list built from `prompt`/`system`."""
+        if messages is not None:
+            return messages
+        built = []
+        if system:
+            built.append({"role": "system", "content": system})
+        built.append({"role": "user", "content": prompt or ""})
+        return built
+
+    def _chat(
+        self,
+        messages: list,
+        max_tokens: int,
+        temperature: float = 0.0,
+        top_p: float = 0.9,
+        grammar: Any = None,
+        stop: Optional[list] = None,
+    ) -> str:
+        """Shared low-level chat completion call. Raises on failure (callers handle fallback)."""
+        kwargs: Dict[str, Any] = {
+            "messages": messages,
+            "max_tokens": max_tokens,
+            "temperature": temperature,
+            "top_p": top_p,
+            "stream": False,
+        }
+        if stop:
+            kwargs["stop"] = stop
+        if grammar is not None:
+            kwargs["grammar"] = grammar
+        response = self.model.create_chat_completion(**kwargs)
+        return response["choices"][0]["message"]["content"]
+
+    def generate_choice(
+        self,
+        prompt: Optional[str] = None,
+        choices: Optional[list] = None,
+        system: str = "",
+        messages: Optional[list] = None,
+    ) -> str:
+        """Generate exactly one of a fixed set of literal string choices via grammar-constrained
+        decoding. Used for the tool-loop's CALL_TOOL/FINAL_ANSWER decision step: near-zero token
+        cost, and the grammar makes an invalid/ambiguous answer impossible.
+
+        Args:
+            prompt: User message (ignored if `messages` is given).
+            choices: List of literal strings the model must pick from.
+            system: Optional system message (ignored if `messages` is given).
+            messages: Optional full multi-turn chat messages list, for callers maintaining a
+                growing conversation (preferred over `prompt` — lets llama.cpp reuse the shared
+                prefix across turns instead of re-encoding a flattened string each call).
+
+        Returns:
+            One of `choices` (the first choice if the backend isn't loaded or grammar fails).
+        """
+        choices = choices or []
+        if not choices:
+            return ""
+        if not self.loaded or self.model is None:
+            return choices[0]
+
+        try:
+            from llama_cpp import LlamaGrammar
+
+            cache_key = tuple(choices)
+            if not hasattr(self, "_choice_grammar_cache"):
+                self._choice_grammar_cache = {}
+            grammar = self._choice_grammar_cache.get(cache_key)
+            if grammar is None:
+                # Longest-first so the grammar doesn't stop early on a shorter choice
+                # that happens to be a prefix of a longer one.
+                sorted_choices = sorted(choices, key=len, reverse=True)
+                alternatives = " | ".join('"' + c.replace('"', '\\"') + '"' for c in sorted_choices)
+                grammar = LlamaGrammar.from_string(f"root ::= ({alternatives})")
+                self._choice_grammar_cache[cache_key] = grammar
+
+            msgs = self._build_messages(prompt, system, messages)
+            text = self._chat(msgs, max_tokens=16, temperature=0.0, grammar=grammar).strip()
+            return text if text in choices else choices[0]
+        except Exception:
+            return choices[0]
+
+    def generate_json(
+        self,
+        prompt: Optional[str] = None,
+        schema: Optional[Dict[str, Any]] = None,
+        system: str = "",
+        n_new: int = 256,
+        messages: Optional[list] = None,
+    ) -> Optional[Dict[str, Any]]:
+        """Generate JSON constrained to exactly match a JSON schema via
+        `LlamaGrammar.from_json_schema`. Guarantees parseable, schema-valid output from even a
+        small model — used for tool-call argument generation.
+
+        Args:
+            prompt: User message (ignored if `messages` is given).
+            schema: JSON schema dict the output must conform to.
+            system: Optional system message (ignored if `messages` is given).
+            n_new: Max tokens to generate.
+            messages: Optional full multi-turn chat messages list (see `generate_choice`).
+
+        Returns:
+            Parsed dict matching schema, or None if the backend isn't loaded or generation/parse
+            fails (caller should treat None as "tool call failed, fall back").
+        """
+        if not self.loaded or self.model is None or not schema:
+            return None
+
+        try:
+            import json as _json
+
+            from llama_cpp import LlamaGrammar
+
+            if not hasattr(self, "_json_grammar_cache"):
+                self._json_grammar_cache = {}
+            cache_key = _json.dumps(schema, sort_keys=True)
+            grammar = self._json_grammar_cache.get(cache_key)
+            if grammar is None:
+                grammar = LlamaGrammar.from_json_schema(cache_key)
+                self._json_grammar_cache[cache_key] = grammar
+
+            msgs = self._build_messages(prompt, system, messages)
+            text = self._chat(msgs, max_tokens=n_new, temperature=0.0, grammar=grammar)
+            return _json.loads(text)
+        except Exception:
+            return None
+
     def get_python_grammar(self) -> Any:
         """
         Returns LlamaGrammar instance for constraining output tokens to Python code.
@@ -156,49 +287,40 @@ class LlamaCppBackend:
 
     def generate(
         self,
-        prompt: str,
+        prompt: Optional[str] = None,
         n_new: int = 192,
         temperature: float = 0.7,
         top_p: float = 0.9,
         system: str = "",
         use_grammar: bool = False,
+        messages: Optional[list] = None,
     ) -> str:
         """Generate text from prompt using llama.cpp chat completion.
 
         Args:
-            prompt: User message.
+            prompt: User message (ignored if `messages` is given).
             n_new: Max tokens to generate.
             temperature: Sampling temperature.
             top_p: Top-p sampling.
-            system: Optional system message (never echoed in response).
+            system: Optional system message (never echoed in response; ignored if `messages`
+                is given).
             use_grammar: Optional boolean to enable grammar-constrained token sampling.
+            messages: Optional full multi-turn chat messages list (see `generate_choice`).
         """
         if not self.loaded or self.model is None:
             return f"[llama.cpp] Backend not loaded. Prompt: {prompt}"
 
         try:
-            messages = []
-            if system:
-                messages.append({"role": "system", "content": system})
-            messages.append({"role": "user", "content": prompt})
-
-            kwargs: Dict[str, Any] = {
-                "messages": messages,
-                "max_tokens": n_new,
-                "temperature": temperature,
-                "top_p": top_p,
-                "repeat_penalty": 1.05,
-                "stop": ["<|im_end|>", "<|endoftext|>"],
-                "stream": False,
-            }
-
-            if use_grammar:
-                grammar = self.get_python_grammar()
-                if grammar:
-                    kwargs["grammar"] = grammar
-
-            response = self.model.create_chat_completion(**kwargs)
-            return response["choices"][0]["message"]["content"]
+            msgs = self._build_messages(prompt, system, messages)
+            grammar = self.get_python_grammar() if use_grammar else None
+            return self._chat(
+                msgs,
+                max_tokens=n_new,
+                temperature=temperature,
+                top_p=top_p,
+                grammar=grammar,
+                stop=["<|im_end|>", "<|endoftext|>"],
+            )
         except Exception as e:
             return f"[llama.cpp] Error: {e}"
 

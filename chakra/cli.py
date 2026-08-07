@@ -458,6 +458,7 @@ def run_repl(
             print("  /git [cmd]         - Run git commands (status, diff, commit)")
             print("  /memory [text]     - View/save project context for future sessions")
             print("  /agents            - List active multi-agent team roles")
+            print("  /tools             - List tools available to Coder/Architect/Auditor agents")
             print("  /save <filepath>   - Save last generated Python code block to a local file")
             print("  /clear             - Clear terminal screen")
             print("  /status            - Show engine info, memory usage, and session details")
@@ -707,6 +708,17 @@ def run_repl(
             print()
             continue
 
+        # ── /tools command: list the tool-calling registry ──
+        if user_input.lower() == "/tools":
+            from chakra.tools import build_default_tools
+
+            registry = build_default_tools(workspace_root=str(Path.cwd()), kimi_agent=agent)
+            print_step("TOOLS", f"{len(registry.names())} tool(s) available to Coder/Architect/Auditor agents:", "INFO")
+            for line in registry.describe().splitlines():
+                print(f"  {line}")
+            print()
+            continue
+
         # Save code command
         if user_input.startswith("/save"):
             parts = user_input.split(maxsplit=1)
@@ -763,6 +775,17 @@ def run_repl(
                 print_step("SANDBOX", f"Execution COMPLETED with warnings after {res.get('iterations', 1)} iteration(s)", "WARN")
                 if res.get("stderr", "").strip():
                     print_step("ERROR", res["stderr"].strip(), "FAIL")
+
+            # Tool-call trace: what the Architect/Coder actually did via tools this run
+            # (only populated when the active engine supports grammar-constrained tool calling).
+            tool_log = list(getattr(orchestrator.architect, "tool_call_log", [])) + \
+                list(getattr(orchestrator.coder, "tool_call_log", []))
+            if tool_log:
+                print_step("TOOLS", f"{len(tool_log)} tool call(s) made during collaboration:", "INFO")
+                for tc in tool_log:
+                    ok = tc.get("result", {}).get("success", False)
+                    mark = "OK" if ok else "FAIL"
+                    print_agent_step(tc.get("role", "Agent"), f"[{mark}] {tc.get('tool')}({tc.get('args')})")
 
             session_mgr.save_session(
                 session_id=active_session_id,
