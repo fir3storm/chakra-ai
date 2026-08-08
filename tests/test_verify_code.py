@@ -191,3 +191,64 @@ def test_self_debug_loop_falls_back_to_full_regen_when_patch_does_not_match():
     assert res["success"] is False
     assert len(res["history"]) == 3
     assert res["history"][2]["patch_applied"] is False
+
+
+class _ScriptedGrammarBackend:
+    """Fake engine-C-shaped backend (has generate_choice/generate_json/generate) so the new
+    workspace-aware first-attempt tool loop in self_debug_loop can be tested without a real
+    GGUF model."""
+
+    def __init__(self, decisions, calls, final_answer):
+        self.decisions = list(decisions)
+        self.calls = list(calls)
+        self.final_answer = final_answer
+        self._decision_i = 0
+        self._call_i = 0
+
+    def generate_choice(self, choices=None, prompt=None, messages=None, system=""):
+        i = min(self._decision_i, len(self.decisions) - 1)
+        self._decision_i += 1
+        return self.decisions[i]
+
+    def generate_json(self, schema=None, prompt=None, messages=None, system="", n_new=256):
+        i = min(self._call_i, len(self.calls) - 1)
+        self._call_i += 1
+        return self.calls[i]
+
+    def generate(self, prompt=None, messages=None, **kw):
+        return self.final_answer
+
+
+def test_self_debug_loop_first_attempt_uses_tools_when_workspace_root_given(tmp_path):
+    (tmp_path / "math_utils.py").write_text("def square(x):\n    return x * x\n", encoding="utf-8")
+
+    backend = _ScriptedGrammarBackend(
+        decisions=["CALL_TOOL", "FINAL_ANSWER"],
+        calls=[{"tool": "read_file", "args": {"path": "math_utils.py"}}],
+        final_answer="```python\nfrom math_utils import square\nprint(square(3))\n```",
+    )
+    agent = KimiAgent(model=backend)
+    res = agent.self_debug_loop(
+        task_prompt="write a script that imports and uses square() from math_utils.py",
+        max_retries=1,
+        gen_tokens=64,
+        workspace_root=str(tmp_path),
+    )
+
+    assert res["history"][0]["tool_calls"][0]["tool"] == "read_file"
+    assert "from math_utils import square" in res["code"]
+
+
+def test_self_debug_loop_without_workspace_root_does_not_use_tools():
+    """workspace_root=None (today's default everywhere except the CLI's /code path) must keep
+    using blind generation — no behavior change for existing callers."""
+    class PlainModel:
+        def __call__(self, prompt):
+            return "```python\nprint('hi')\n```"
+
+        def generate(self, prompt, n_new=512, system=""):
+            return self.__call__(prompt)
+
+    agent = KimiAgent(model=PlainModel())
+    res = agent.self_debug_loop(task_prompt="print hi", max_retries=1, gen_tokens=32)
+    assert res["history"][0]["tool_calls"] == []

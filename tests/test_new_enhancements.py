@@ -17,7 +17,7 @@ import pytest
 from chakra.security import InfoSecAuditor
 from chakra.agent import KimiAgent
 from chakra.workspace import WorkspaceIndexer, SymbolGraph, scan_ast_symbols
-from chakra.cli import main, run_code_generation_task
+from chakra.cli import main, run_code_generation_task, lint_non_python_code
 
 
 def test_security_auto_remediation():
@@ -233,6 +233,104 @@ def test_self_debug_loop_long_running_script_soft_succeeds():
     assert elapsed < 8
 
 
+def test_run_code_generation_task_diff_preview_decline_keeps_existing_file(tmp_path, monkeypatch):
+    from unittest.mock import MagicMock, patch
+
+    monkeypatch.chdir(tmp_path)
+    out_dir = tmp_path / "chakra_output"
+    out_dir.mkdir()
+    (out_dir / "generated_script.py").write_text("print('old')\n", encoding="utf-8")
+
+    agent = MagicMock()
+    agent.run_agentic_loop.return_value = {
+        "success": True, "code": "print('new')\n", "stdout": "", "stderr": "",
+        "attempts": 1, "iterations": 1, "history": [],
+    }
+    agent.generate_diff.side_effect = lambda old, new, **kw: f"--- old\n+++ new\n-{old}+{new}"
+
+    # The prompt only fires when stdin is a real terminal (see run_code_generation_task) —
+    # under pytest sys.stdin.isatty() is False, so simulate an interactive terminal here.
+    with patch("builtins.input", return_value="n"), patch("sys.stdin.isatty", return_value=True):
+        result = run_code_generation_task(agent, "make a print script", gen_tokens=32, interactive=True)
+
+    assert result["declined"] is True
+    assert (out_dir / "generated_script.py").read_text(encoding="utf-8") == "print('old')\n"
+
+
+def test_run_code_generation_task_diff_preview_accept_overwrites(tmp_path, monkeypatch):
+    from unittest.mock import MagicMock, patch
+
+    monkeypatch.chdir(tmp_path)
+    out_dir = tmp_path / "chakra_output"
+    out_dir.mkdir()
+    (out_dir / "generated_script.py").write_text("print('old')\n", encoding="utf-8")
+
+    agent = MagicMock()
+    agent.run_agentic_loop.return_value = {
+        "success": True, "code": "print('new')\n", "stdout": "", "stderr": "",
+        "attempts": 1, "iterations": 1, "history": [],
+    }
+    agent.generate_diff.side_effect = lambda old, new, **kw: f"--- old\n+++ new\n-{old}+{new}"
+
+    with patch("builtins.input", return_value="y"), patch("sys.stdin.isatty", return_value=True):
+        result = run_code_generation_task(agent, "make a print script", gen_tokens=32, interactive=True)
+
+    assert result["declined"] is False
+    assert (out_dir / "generated_script.py").read_text(encoding="utf-8") == "print('new')\n"
+
+
+def test_run_code_generation_task_skips_prompt_when_not_a_real_terminal(tmp_path, monkeypatch):
+    """interactive=True alone isn't enough to prompt — stdin must also actually be a tty (e.g.
+    not under pytest, CI, or a piped invocation), otherwise it silently overwrites like today."""
+    from unittest.mock import MagicMock, patch
+
+    monkeypatch.chdir(tmp_path)
+    out_dir = tmp_path / "chakra_output"
+    out_dir.mkdir()
+    (out_dir / "generated_script.py").write_text("print('old')\n", encoding="utf-8")
+
+    agent = MagicMock()
+    agent.run_agentic_loop.return_value = {
+        "success": True, "code": "print('new')\n", "stdout": "", "stderr": "",
+        "attempts": 1, "iterations": 1, "history": [],
+    }
+
+    def boom(*a, **k):
+        raise AssertionError("input() must not be called when stdin isn't a real terminal")
+
+    with patch("builtins.input", side_effect=boom), patch("sys.stdin.isatty", return_value=False):
+        result = run_code_generation_task(agent, "make a print script", gen_tokens=32, interactive=True)
+
+    assert result["declined"] is False
+    assert (out_dir / "generated_script.py").read_text(encoding="utf-8") == "print('new')\n"
+
+
+def test_run_code_generation_task_non_interactive_never_prompts(tmp_path, monkeypatch):
+    """The --prompt (single-shot, non-interactive) CLI path has no stdin to read a confirmation
+    from — interactive=False must overwrite directly without ever calling input()."""
+    from unittest.mock import MagicMock, patch
+
+    monkeypatch.chdir(tmp_path)
+    out_dir = tmp_path / "chakra_output"
+    out_dir.mkdir()
+    (out_dir / "generated_script.py").write_text("print('old')\n", encoding="utf-8")
+
+    agent = MagicMock()
+    agent.run_agentic_loop.return_value = {
+        "success": True, "code": "print('new')\n", "stdout": "", "stderr": "",
+        "attempts": 1, "iterations": 1, "history": [],
+    }
+
+    def boom(*a, **k):
+        raise AssertionError("input() must not be called when interactive=False")
+
+    with patch("builtins.input", side_effect=boom):
+        result = run_code_generation_task(agent, "make a print script", gen_tokens=32, interactive=False)
+
+    assert result["declined"] is False
+    assert (out_dir / "generated_script.py").read_text(encoding="utf-8") == "print('new')\n"
+
+
 def test_run_code_generation_task_does_not_reexecute_verified_code(tmp_path, monkeypatch):
     """run_code_generation_task must trust the success/stdout/stderr that run_agentic_loop
     already produced (self_debug_loop verifies GUI apps headlessly and long-running scripts
@@ -262,6 +360,41 @@ def test_run_code_generation_task_does_not_reexecute_verified_code(tmp_path, mon
     agent.run_in_sandbox.assert_not_called()
     assert result["executed"] is True
     assert result["success"] is True
+
+
+def test_lint_non_python_code_unsupported_extension_skips():
+    # No linter mapped for .html/.css/etc — must never block saving.
+    assert lint_non_python_code("<html><body>不完全</body>", ".html") is None
+
+
+def test_lint_non_python_code_bash_catches_syntax_error():
+    import shutil
+    if shutil.which("bash") is None:
+        pytest.skip("bash not installed")
+    result = lint_non_python_code("#!/bin/bash\n\nfi\n", ".sh")
+    assert result is not None
+    assert "fi" in result
+
+
+def test_lint_non_python_code_bash_accepts_valid_script():
+    import shutil
+    if shutil.which("bash") is None:
+        pytest.skip("bash not installed")
+    assert lint_non_python_code("#!/bin/bash\necho hello\n", ".sh") is None
+
+
+def test_lint_non_python_code_js_catches_syntax_error():
+    import shutil
+    if shutil.which("node") is None:
+        pytest.skip("node not installed")
+    result = lint_non_python_code("function f( {\n  return 1\n}\n", ".js")
+    assert result is not None
+
+
+def test_lint_non_python_code_missing_interpreter_never_blocks():
+    # php isn't required to be installed for this repo to work — a missing interpreter must
+    # degrade to "skip check", not raise or falsely report a syntax error.
+    assert lint_non_python_code("<?php this is not even valid php {{{", ".php") is None
 
 
 def test_tool_registry_and_search_replace():

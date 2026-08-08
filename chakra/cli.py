@@ -328,11 +328,74 @@ def parse_prompt(prompt_str: str) -> List[int]:
     return [ord(c) % 256 for c in prompt_str]
 
 
+_LINT_COMMANDS = {
+    ".sh": ["bash", "-n"],
+    ".php": ["php", "-l"],
+    ".js": ["node", "--check"],
+}
+
+
+def lint_non_python_code(code: str, target_ext: str) -> Optional[str]:
+    """Syntax-only check (no execution) for non-Python generated output — catches garbage like
+    an unmatched `fi`/`}` before it gets silently saved, which today's "skip execution for
+    non-Python" path has no other way to detect. Returns an error message string if a linter is
+    available and found a syntax error, or None if syntax is OK *or* no linter is available for
+    this extension (a missing linter must never block saving)."""
+    cmd_template = _LINT_COMMANDS.get(target_ext)
+    if cmd_template is None:
+        return None
+
+    import shutil
+    import subprocess
+
+    # Resolve the interpreter explicitly via shutil.which rather than passing the bare name to
+    # subprocess.run: on Windows there can be multiple same-named executables on PATH (e.g. a
+    # WSL launcher shim at C:\Windows\System32\bash.exe alongside Git's real bash.exe) that
+    # resolve inconsistently between shells and subprocess.run — including ones that silently
+    # no-op instead of erroring, which would make this check falsely report "syntax OK".
+    resolved = shutil.which(cmd_template[0])
+    if resolved is None:
+        return None  # interpreter not installed — skip, don't block saving
+    cmd_prefix = [resolved] + cmd_template[1:]
+
+    try:
+        if target_ext == ".sh":
+            # bash reads its script from stdin when given no filename — avoids passing a
+            # Windows-style temp path to MSYS/Git-Bash's bash.exe, which expects POSIX paths
+            # and otherwise misparses it (backslashes get silently eaten).
+            result = subprocess.run(cmd_prefix, input=code, capture_output=True, text=True, timeout=10)
+        else:
+            import tempfile
+            import os
+
+            tmp_path = None
+            try:
+                with tempfile.NamedTemporaryFile(mode="w", suffix=target_ext, delete=False, encoding="utf-8") as tmp:
+                    tmp.write(code)
+                    tmp_path = tmp.name
+                result = subprocess.run(cmd_prefix + [tmp_path], capture_output=True, text=True, timeout=10)
+            finally:
+                if tmp_path:
+                    try:
+                        os.remove(tmp_path)
+                    except OSError:
+                        pass
+
+        if result.returncode != 0:
+            return (result.stderr or result.stdout or "Syntax check failed").strip()[:500]
+        return None
+    except FileNotFoundError:
+        return None  # linter not installed — skip, don't block saving
+    except Exception:
+        return None  # lint-check machinery itself must never block saving
+
+
 def run_code_generation_task(
     agent: "KimiAgent",
     code_prompt: str,
     gen_tokens: int,
     incremental: bool = True,
+    interactive: bool = True,
 ) -> Dict[str, Any]:
     """
     Runs the full agentic code-generation pipeline: language/filename detection, workspace
@@ -340,6 +403,13 @@ def run_code_generation_task(
     and auto-save to chakra_output/. Shared by the REPL's natural-language code path and the
     CLI's non-interactive --prompt mode, so both get the same real agentic behavior instead of
     --prompt being a disconnected raw-completion debug path.
+
+    Args:
+        interactive: When True (REPL default) and the target output file already exists with
+            different content, shows a diff and asks for confirmation before overwriting it
+            (matching /edit's existing behavior). Pass False for non-interactive callers (the
+            CLI's --prompt mode) where there's no stdin to read a confirmation from — those
+            overwrite directly, same as today.
 
     Returns dict: code, target_ext, target_lang, output_file (str), success (bool, execution).
     """
@@ -425,16 +495,41 @@ def run_code_generation_task(
         gen_tokens=code_gen_tokens,
         incremental=incremental,
         progress_callback=progress_cb,
+        workspace_root=Path.cwd(),
     )
     pbar.finish(message=f"Generated {len(res['code'].splitlines())} lines of code")
 
     generated_code = res["code"]
+
+    # Syntax-only lint for non-Python output — self_debug_loop's own verification doesn't
+    # meaningfully check non-Python syntax (it only ever tries running things as Python), so
+    # without this a broken script (e.g. an unmatched `fi`) would be saved silently. One retry
+    # with the error fed back if the linter finds a problem; a missing linter never blocks.
+    if target_ext != ".py":
+        lint_error = lint_non_python_code(generated_code, target_ext)
+        if lint_error:
+            print_tool("info", f"{target_lang} syntax check failed, retrying once", lint_error[:100])
+            retry_prompt = clean_code_prompt + (
+                f"\n\nYour previous attempt had a syntax error:\n```\n{lint_error}\n```\n"
+                f"Fix it and write the corrected, syntactically valid {target_lang} file."
+            )
+            retry_res = agent.run_agentic_loop(
+                prompt=retry_prompt, max_retries=1, gen_tokens=code_gen_tokens, incremental=incremental,
+            )
+            if retry_res.get("code"):
+                generated_code = retry_res["code"]
+                if lint_non_python_code(generated_code, target_ext):
+                    print_tool("error", f"{target_lang} still has a syntax error after retry")
+                else:
+                    print_tool("info", f"{target_lang} syntax check passed after retry")
+
     result: Dict[str, Any] = {
         "code": generated_code,
         "target_ext": target_ext,
         "target_lang": target_lang,
         "output_file": None,
         "executed": False,
+        "declined": False,
         "success": res.get("success", False),
         "stdout": res.get("stdout", ""),
         "stderr": res.get("stderr", ""),
@@ -448,6 +543,27 @@ def run_code_generation_task(
             code_file = output_dir / output_filename
         else:
             code_file = output_dir / f"generated_script{target_ext}"
+
+        # Also require a real interactive terminal (not just interactive=True) — under pytest,
+        # CI, or piped/scripted invocations, sys.stdin isn't a tty, and prompting there would
+        # either hang waiting for input that will never come, or (if input() is mocked/scripted
+        # for a *different* purpose entirely) consume input meant for something else.
+        if interactive and sys.stdin.isatty() and code_file.exists():
+            existing_content = code_file.read_text(encoding="utf-8", errors="replace")
+            if existing_content.strip() and existing_content != generated_code:
+                diff = agent.generate_diff(
+                    existing_content, generated_code,
+                    fromfile=str(code_file), tofile=f"{code_file} (new)",
+                )
+                print_diff_box(diff, title=f"Preview: {code_file.name}")
+                ask = input(f"Overwrite {code_file}? [y/N] ").strip().lower()
+                if ask != "y":
+                    print_tool("info", "Save discarded — existing file kept unchanged.")
+                    result["output_file"] = str(code_file)
+                    result["code"] = existing_content
+                    result["declined"] = True
+                    return result
+
         code_file.write_text(generated_code, encoding="utf-8")
         result["output_file"] = str(code_file)
         print_tool("save", str(code_file), f"→ {len(generated_code.splitlines())} lines")
@@ -1370,7 +1486,7 @@ def main(args: Optional[List[str]] = None) -> int:
     print_step("PROMPT", f"Input: '{prompt_str}'", "INFO")
 
     if is_code_task:
-        result = run_code_generation_task(agent, prompt_str, parsed.gen, parsed.incremental)
+        result = run_code_generation_task(agent, prompt_str, parsed.gen, parsed.incremental, interactive=False)
         if result["executed"]:
             return 0 if result["success"] else 1
         return 0

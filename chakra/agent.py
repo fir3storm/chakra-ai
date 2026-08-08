@@ -36,6 +36,13 @@ def _diagnose_error(stderr: str) -> str:
     return None
 
 
+def is_grammar_backend(model: Any) -> bool:
+    """True if `model` supports the grammar-constrained ToolLoop protocol (chakra.tools), i.e.
+    it's an engine C / llama.cpp LlamaGrammar backend. Other backends (engines A/B, no model)
+    fall back to today's blind generate_with_auto_continuation path."""
+    return hasattr(model, "generate_choice") and hasattr(model, "generate_json")
+
+
 _LONG_RUNNING_LOOP_RE = re.compile(r"while\s+(True|1)\s*:")
 
 
@@ -993,9 +1000,18 @@ class KimiAgent:
         gen_tokens: int = 128,
         incremental: bool = True,
         progress_callback: Optional[Any] = None,
+        workspace_root: Optional[Union[str, Path]] = None,
     ) -> Dict[str, Any]:
         """
         Runs self-debugging agentic loop given a model callback and task prompt.
+
+        Args:
+            workspace_root: Optional existing project directory. When set and the backend
+                supports grammar-constrained tool calling (engine C / llama.cpp), the first
+                generation attempt uses a bounded tool loop (read_file/list_dir/search_symbols/
+                run_python) so the model can inspect real files before writing code, instead of
+                generating blind from the prompt text alone. Retries after the first attempt are
+                unaffected — they keep today's proven SEARCH/REPLACE-patch-or-regen behavior.
         """
         model = model or self.model
         tokenizer = tokenizer or self.tokenizer
@@ -1018,13 +1034,43 @@ class KimiAgent:
             tmp_script = Path(tmp_dir) / "temp_agent_code.py"
 
             for attempt in range(1, max_retries + 1):
-                # Multi-pass auto-continuation generation
-                model_resp = self.generate_with_auto_continuation(
-                    prompt=current_prompt,
-                    gen_tokens=max(gen_tokens, 512),
-                    max_passes=4,
-                    progress_callback=progress_callback,
-                )
+                tool_calls_made: List[Dict[str, Any]] = []
+                used_tool_loop = False
+
+                if attempt == 1 and workspace_root is not None and is_grammar_backend(model):
+                    # First attempt: let the model inspect the real workspace (existing files,
+                    # symbols) before writing code, instead of generating blind from the prompt
+                    # text alone. Falls through to blind generation below on any failure.
+                    if progress_callback:
+                        progress_callback(attempt, 0, "Inspecting workspace...")
+                    try:
+                        from chakra.tools import build_default_tools, ToolLoop
+
+                        registry = build_default_tools(
+                            workspace_root=str(workspace_root), kimi_agent=self
+                        ).subset(["read_file", "list_dir", "search_symbols", "run_python"])
+                        tool_loop = ToolLoop(
+                            model,
+                            registry,
+                            system_prompt="You are a Python developer. Inspect the existing "
+                                          "workspace with tools if it helps before writing code.",
+                            max_steps=5,
+                        )
+                        tool_result = tool_loop.run(current_prompt)
+                        model_resp = tool_result["final_answer"]
+                        tool_calls_made = tool_result.get("tool_calls", [])
+                        used_tool_loop = True
+                    except Exception:
+                        used_tool_loop = False
+
+                if not used_tool_loop:
+                    # Multi-pass auto-continuation generation
+                    model_resp = self.generate_with_auto_continuation(
+                        prompt=current_prompt,
+                        gen_tokens=max(gen_tokens, 512),
+                        max_passes=4,
+                        progress_callback=progress_callback,
+                    )
 
                 patch_applied = False
                 if patch_mode and last_code:
@@ -1087,6 +1133,7 @@ class KimiAgent:
                         "exec_result": exec_res,
                         "verify_result": verify_result,
                         "patch_applied": patch_applied,
+                        "tool_calls": tool_calls_made,
                     }
                 )
 
@@ -1155,6 +1202,7 @@ class KimiAgent:
         gen_tokens: int = 128,
         incremental: bool = True,
         progress_callback: Optional[Any] = None,
+        workspace_root: Optional[Union[str, Path]] = None,
     ) -> Dict[str, Any]:
         """
         Runs agentic code generation with an automatic self-debugging feedback loop.
@@ -1165,6 +1213,8 @@ class KimiAgent:
             gen_tokens: Maximum tokens to generate per iteration.
             incremental: Stateful model decoding flag.
             progress_callback: Optional progress update callback function.
+            workspace_root: Optional existing project directory the first generation attempt may
+                inspect via tools (see self_debug_loop).
 
         Returns:
             Dict containing success status, final code, output, error, and history.
@@ -1177,6 +1227,7 @@ class KimiAgent:
             gen_tokens=gen_tokens,
             incremental=incremental,
             progress_callback=progress_callback,
+            workspace_root=workspace_root,
         )
         return res
 
